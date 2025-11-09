@@ -146,47 +146,54 @@ async function writeIndex(obj: Record<string,string>) {
   await fs.promises.writeFile(INDEX_FILE, JSON.stringify(obj, null, 2), 'utf-8')
 }
 
-// Ensure index file exists to avoid `Cannot GET /meta/` when static handler expects index.json
-(async () => {
+// helper: determine private hosts
+function isPrivateHost(h: string) {
+  if (!h) return false
+  const lower = h.toLowerCase()
+  if (lower === 'localhost' || lower === '127.0.0.1' || lower === '::1') return true
+  if (lower.startsWith('192.168.')) return true
+  if (lower.startsWith('10.')) return true
+  const m = /^172\.(\d+)\./.exec(lower); if (m) { const n = Number(m[1]); if (n>=16 && n<=31) return true }
+  return false
+}
+
+// one-shot or on-demand migration to BASE_URL
+async function migrateToBaseUrl(): Promise<{ indexChanged: boolean; entriesUpdated: number; filesTouched: number }>{
+  let indexChanged = false
+  let entriesUpdated = 0
+  let filesTouched = 0
   try {
+    // ensure index exists
     if (!fs.existsSync(INDEX_FILE)) {
       await fs.promises.writeFile(INDEX_FILE, JSON.stringify({}, null, 2), 'utf-8')
     }
-    // Migrate legacy localhost origins in index.json to BASE_URL origin
+    const base = new URL(BASE_URL)
+    // migrate index.json
     try {
       const txt = await fs.promises.readFile(INDEX_FILE, 'utf-8')
       const idx = JSON.parse(txt || '{}') as Record<string,string>
-      const base = new URL(BASE_URL)
-      let changed = false
-      const isPrivateHost = (h: string) => {
-        if (!h) return false
-        const lower = h.toLowerCase()
-        if (lower === 'localhost' || lower === '127.0.0.1' || lower === '::1') return true
-        if (lower.startsWith('192.168.')) return true
-        if (lower.startsWith('10.')) return true
-        const m = /^172\.(\d+)\./.exec(lower); if (m) { const n = Number(m[1]); if (n>=16 && n<=31) return true }
-        return false
-      }
       for (const k of Object.keys(idx)) {
         try {
           const u = new URL(idx[k])
-          if (isPrivateHost(u.hostname) && (u.port !== base.port || u.hostname !== base.hostname || u.protocol !== base.protocol)) {
-            idx[k] = `${base.origin}${u.pathname}`
-            changed = true
+          if (isPrivateHost(u.hostname) || u.hostname !== base.hostname || u.protocol !== base.protocol || (u.port && u.port !== base.port)) {
+            const pathname = u.pathname + (u.search || '')
+            idx[k] = `${base.origin}${pathname}`
+            indexChanged = true
+            entriesUpdated++
           }
-        } catch {}
+        } catch {
+          // if value is not URL, skip
+        }
       }
-      if (changed) {
+      if (indexChanged) {
         await fs.promises.writeFile(INDEX_FILE, JSON.stringify(idx, null, 2), 'utf-8')
-        console.log('Migrated /meta/index.json localhost entries to', base.origin)
+        console.log('Migrated /meta/index.json entries to', base.origin)
       }
-    } catch (e) { /* noop */ }
+    } catch (e) { /* ignore */ }
 
-    // Also migrate metadata JSON files' image fields from private hosts to BASE_URL origin
+    // migrate metadata image fields
     try {
-      const base = new URL(BASE_URL)
       const files = await fs.promises.readdir(METADATA_DIR)
-      let touched = 0
       for (const f of files) {
         if (!f.endsWith('.json') || f === 'index.json') continue
         const full = path.join(METADATA_DIR, f)
@@ -196,23 +203,32 @@ async function writeIndex(obj: Record<string,string>) {
           if (j && typeof j === 'object' && typeof j.image === 'string' && j.image) {
             try {
               const u = new URL(j.image)
-              const lowerHost = (u.hostname || '').toLowerCase()
-              const isPriv = lowerHost === 'localhost' || lowerHost === '127.0.0.1' || lowerHost === '::1' || lowerHost.startsWith('192.168.') || lowerHost.startsWith('10.') || (/^172\.(\d+)\./.test(lowerHost) && (()=>{ const n=Number(/^172\.(\d+)\./.exec(lowerHost)![1]); return n>=16 && n<=31 })())
-              if (isPriv || u.hostname !== base.hostname || u.protocol !== base.protocol || (u.port && u.port !== base.port)) {
-                // 仅当路径位于 /uploads 或 /meta 下时替换为同路径的 BASE_URL
-                const pathname = u.pathname + (u.search || '')
-                if (pathname.startsWith('/uploads') || pathname.startsWith('/meta')) {
-                  j.image = `${base.origin}${pathname}`
-                  await fs.promises.writeFile(full, JSON.stringify(j, null, 2), 'utf-8')
-                  touched++
-                }
+              const pathname = u.pathname + (u.search || '')
+              const needs = isPrivateHost(u.hostname || '') || u.hostname !== (new URL(BASE_URL)).hostname || u.protocol !== (new URL(BASE_URL)).protocol || (u.port && u.port !== (new URL(BASE_URL)).port)
+              if (needs && (pathname.startsWith('/uploads') || pathname.startsWith('/meta'))) {
+                j.image = `${(new URL(BASE_URL)).origin}${pathname}`
+                await fs.promises.writeFile(full, JSON.stringify(j, null, 2), 'utf-8')
+                filesTouched++
               }
-            } catch { /* image 不是绝对 URL 或解析失败，忽略 */ }
+            } catch { /* not absolute URL */ }
           }
-        } catch { /* ignore single file errors */ }
+        } catch { /* ignore */ }
       }
-      if (touched>0) console.log(`Migrated ${touched} metadata files to BASE_URL origin for image fields`)
+      if (filesTouched>0) console.log(`Migrated ${filesTouched} metadata files to BASE_URL origin for image fields`)
     } catch { /* ignore */ }
+  } catch (e) {
+    console.warn('migrateToBaseUrl failed:', e)
+  }
+  return { indexChanged, entriesUpdated, filesTouched }
+}
+
+// Ensure index file exists to avoid `Cannot GET /meta/` when static handler expects index.json
+(async () => {
+  try {
+    const result = await migrateToBaseUrl()
+    if (!result.indexChanged && result.filesTouched === 0) {
+      // no-op; but at least index exists
+    }
   } catch (e) { console.warn('init index.json failed:', e) }
 })();
 
@@ -246,6 +262,17 @@ app.delete('/api/meta/index', requireApiKey, async (req, res) => {
 app.get('/api/meta/index', async (_req, res) => {
   const idx = await readIndex()
   return res.json(idx)
+})
+
+// Manual migration endpoint (guarded by API_KEY if set)
+app.post('/api/meta/migrate', requireApiKey, async (_req, res) => {
+  try {
+    const r = await migrateToBaseUrl()
+    return res.json({ ok: true, ...r, baseUrl: BASE_URL })
+  } catch (e) {
+    console.error(e)
+    return res.status(500).json({ error: 'internal_error' })
+  }
 })
 
 // Append-only log endpoint (JSONL per month)
