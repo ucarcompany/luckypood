@@ -194,8 +194,8 @@ export function usePools() {
             winner: await pool.winner(),
           }
         }
-        const lower = addr.toLowerCase()
-  const extra = metaByPool[lower] || {}
+    const lower = addr.toLowerCase()
+    const extra = metaByPool[lower] || {}
         const item: PoolInfo = {
           address: addr,
           stablecoin: info.stablecoin,
@@ -212,7 +212,8 @@ export function usePools() {
           totalRaised: info.totalRaised,
           countdownStartAt: Number(info.countdownStartAt),
           winner: info.winner,
-          metadataURI: extra.metadataURI,
+          // 优先使用后端索引中的 URI（覆盖事件里的 metadataURI）
+          metadataURI: extra.indexURI || extra.metadataURI,
           sortOrder: extra.sortOrder
         }
         // 2) fetch metadata if available, with multiple fallbacks for tests
@@ -241,27 +242,29 @@ export function usePools() {
         }
         let meta: any = null;
         let metaSrc = 'placeholder';
-        // 1. 事件里直接拿到的 metadataURI
-        if (item.metadataURI) {
-          const tryUri = rewriteToBackendOrigin(item.metadataURI)
+        const eventURI = extra?.metadataURI
+        const indexURI = extra?.indexURI
+        // 1. 先试后端索引中的 URI（indexURI）
+        if (indexURI) {
+          const tryUri = rewriteToBackendOrigin(indexURI)
           meta = await tryLoadMeta(tryUri)
           if (!meta) {
-            // 第二次重试（短延迟），避免偶发网络/启动时文件尚未写入
+            await new Promise(r=>setTimeout(r, 600))
+            meta = await tryLoadMeta(tryUri, 2)
+          }
+          if (meta) metaSrc = 'backend_index'
+        }
+        // 2. 再试合约事件中的 metadataURI（eventURI）
+        if (!meta && eventURI) {
+          const tryUri = rewriteToBackendOrigin(eventURI)
+          meta = await tryLoadMeta(tryUri)
+          if (!meta) {
             await new Promise(r=>setTimeout(r, 800))
             meta = await tryLoadMeta(tryUri, 2)
           }
           if (meta) metaSrc = 'factory_event'
         }
-        // 1.1 若事件 URI 失败，则尝试索引中的 URI（indexURI）
-        if (!meta && extra && extra.indexURI) {
-          meta = await tryLoadMeta(extra.indexURI)
-          if (!meta) {
-            await new Promise(r=>setTimeout(r, 600))
-            meta = await tryLoadMeta(extra.indexURI, 2)
-          }
-          if (meta) metaSrc = 'backend_index'
-        }
-        // 2. 后端索引 /meta/<addr>.json 兜底（注意：如果后端未生成按地址命名的 JSON，此步可能 404）
+        // 3. 后端索引 /meta/<addr>.json 兜底（注意：如果后端未生成按地址命名的 JSON，此步可能 404）
         if (!meta && BACKEND_URL) {
           const lowerAddr = addr.toLowerCase()
           const uri = `${BACKEND_URL}/meta/${lowerAddr}.json`
@@ -273,7 +276,7 @@ export function usePools() {
           }
           if (meta) metaSrc = 'backend_lookup'
         }
-        // 3. ipfs:// 兜底
+        // 4. ipfs:// 兜底
         if (!meta && item.metadataURI && item.metadataURI.startsWith('ipfs://')) {
           const cid = item.metadataURI.slice('ipfs://'.length)
           meta = await tryLoadMeta(`https://ipfs.io/ipfs/${cid}`)
