@@ -20,13 +20,14 @@ export default function DebugPanel(){
       ]
       const results: Array<{ url:string; status:string; ms?:number }> = []
       let anyOk = false
+      let okCount = 0
       for (const url of seeds) {
         const t0 = performance.now()
         try {
           const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({jsonrpc:'2.0', id:1, method:'eth_blockNumber', params:[]}) })
           const j = await r.json().catch(()=>null)
           const ms = Math.round(performance.now() - t0)
-          if (j && j.result) { results.push({ url, status:'ok', ms }); anyOk = true }
+          if (j && j.result) { results.push({ url, status:'ok', ms }); anyOk = true; okCount++ }
           else { results.push({ url, status:'bad_response', ms }) }
         } catch (e:any) {
           const ms = Math.round(performance.now() - t0)
@@ -34,7 +35,8 @@ export default function DebugPanel(){
         }
       }
       setRpcMatrix(results)
-      setRpcOk(anyOk ? 'ok' : (results.length ? 'all_failed' : 'no_DEFAULT_RPC'))
+      // 只有当所有候选都失败（okCount 为 0）时，才判定为连接失败，从而触发“请刷新或检查网络...”分支
+      setRpcOk(okCount>0 ? 'ok' : (results.length ? 'all_failed' : 'no_DEFAULT_RPC'))
     })()
   }, [])
 

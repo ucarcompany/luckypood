@@ -80,7 +80,7 @@ export default function App() {
         <div className="hero">
             <h2>{t('wish_pool')}</h2>
           <p>{t('subtitle_tagline')}</p>
-            <p style={{color:'#94a3b8', fontSize:12, marginTop:6}}>{t('hero_note')}</p>
+            <p style={{color:'#94a3b8', fontSize:12, marginTop:6, whiteSpace:'pre-line'}}>{t('hero_note')}</p>
           <svg viewBox="0 0 1440 320" preserveAspectRatio="none" aria-hidden>
             <path fill="var(--wave)" fillOpacity="0.3" d="M0,128L60,160C120,192,240,256,360,245.3C480,235,600,149,720,138.7C840,128,960,192,1080,208C1200,224,1320,192,1380,176L1440,160L1440,320L1380,320C1320,320,1200,320,1080,320C960,320,840,320,720,320C600,320,480,320,360,320C240,320,120,320,60,320L0,320Z"></path>
           </svg>
