@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BrowserProvider, JsonRpcProvider, Contract, Interface } from 'ethers'
 import { FACTORY_ADDRESS, DEFAULT_RPC, HIDDEN_POOLS, BACKEND_URL, FACTORY_DEPLOY_BLOCK } from '../config'
 import FactoryArtifact from '@abi/LuckyPoolFactory.json'
@@ -54,6 +54,7 @@ export function usePools() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pools, setPools] = useState<PoolInfo[]>([])
+  const loadingRef = useRef(false) // 防止并发加载
 
   const rewriteToBackendOrigin = (uri?: string | null) => {
     try {
@@ -71,19 +72,24 @@ export function usePools() {
     } catch { return uri || undefined }
   }
 
-  const load = useCallback(async () => {
+  const loadImpl = useCallback(async (opts?: { silent?: boolean }) => {
     if (!FACTORY_ADDRESS) {
-      setPools([])
-      setError('缺少 VITE_FACTORY_ADDRESS（用户前端未配置工厂地址）')
+      if (!opts?.silent) {
+        setPools([])
+        setError('缺少 VITE_FACTORY_ADDRESS（用户前端未配置工厂地址）')
+      }
       return
     }
     if (!provider || !factory) {
-      setPools([])
-      setError('Provider 未就绪或工厂实例创建失败（请检查 DEFAULT_RPC 与工厂地址）')
+      if (!opts?.silent) {
+        setPools([])
+        setError('Provider 未就绪或工厂实例创建失败（请检查 DEFAULT_RPC 与工厂地址）')
+      }
       return
     }
-    setLoading(true)
-    setError(null)
+    if (loadingRef.current) return
+    loadingRef.current = true
+    if (!opts?.silent) { setLoading(true); setError(null) }
     try {
       const poolAddrs: string[] = await factory.getPools()
       // ===== 工具：分段批量读取日志，规避 BSC -32005 limit exceeded =====
@@ -328,13 +334,19 @@ export function usePools() {
   const active = res.filter(p => !p.cancelled && !HIDDEN_POOLS.includes(p.address.toLowerCase()))
   // sort by sortOrder asc if present
   active.sort((a,b)=> (a.sortOrder ?? 1e9) - (b.sortOrder ?? 1e9))
+  // 仅当成功拉取时再替换 UI，避免闪烁
   setPools(active)
     } catch (e:any) {
-      setError(e.message || String(e))
+      if (!opts?.silent) setError(e.message || String(e))
+      else console.warn('[pools] silent refresh failed:', e?.message || e)
     } finally {
-      setLoading(false)
+      if (!opts?.silent) setLoading(false)
+      loadingRef.current = false
     }
   }, [provider, factory])
 
-  return { provider, factory, pools, loading, error, load }
+  const load = useCallback(async () => loadImpl({ silent: false }), [loadImpl])
+  const refreshSilent = useCallback(async () => loadImpl({ silent: true }), [loadImpl])
+
+  return { provider, factory, pools, loading, error, load, refreshSilent }
 }
