@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 export default function ActivityList() {
   const { t } = useTranslation()
-  const { pools, load, loading, error, refreshSilent, refreshing, totalPools, cancelledCount, hiddenCount } = usePools()
+  const { pools, load, loading, error, errorKind, refreshSilent, refreshing, totalPools, cancelledCount, hiddenCount } = usePools()
   const showDebug = (() => {
     const params = new URLSearchParams(window.location.search)
     return params.get('debug') === '1' || localStorage.getItem('debug') === '1'
@@ -21,11 +21,12 @@ export default function ActivityList() {
     return ()=> clearInterval(id)
   }, [refreshSilent])
   // 错误信息改为非阻塞显示，让已有池仍可展示 & 用户能点击刷新
+  const isInit = errorKind === 'init'
   const errorBanner = error ? (
-    <div className={`provider-error ${error.includes('初始化中') ? 'fade-in' : ''}`}> 
+    <div className={`provider-error ${isInit ? 'fade-in' : ''}`}> 
       <div className="water-pulse" />
-      <span>{error}</span>
-      {error.includes('初始化中') && (
+      <span>{t(error as any)}</span>
+      {isInit && (
         <button
           style={{marginLeft:'auto'}}
           onClick={()=>{
@@ -34,7 +35,7 @@ export default function ActivityList() {
           }}
         >{t('refresh')}</button>
       )}
-      {!error.includes('初始化中') && (
+      {!isInit && (
         <button
           style={{marginLeft:'auto'}}
           onClick={()=>{ location.reload() }}

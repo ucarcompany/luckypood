@@ -60,6 +60,7 @@ export function usePools() {
   const [lastHealthCheckAt, setLastHealthCheckAt] = useState<number>(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [errorKind, setErrorKind] = useState<'init'|'final'|'other'|null>(null)
   const [pools, setPools] = useState<PoolInfo[]>([])
   const [refreshing, setRefreshing] = useState(false)
   const loadingRef = useRef(false) // 防止并发加载
@@ -172,7 +173,10 @@ export function usePools() {
       // 不再直接抛出“Provider 未就绪”错误，避免首次渲染时闪现；改为轻量重试。
       if (!opts?.silent) {
         // 保持现有列表与错误；若已经有数据则不覆盖错误
-  if (pools.length === 0) setError(attempt >= 5 ? '小水滴正在今日汇聚成河，请您耐心等待，若长时间未加载成功，小水滴可能走丢了，请尝试刷新或检查网络，谢谢~' : 'Provider 初始化中，请稍候...')
+        if (pools.length === 0) {
+          if (attempt >= 5) { setError('provider_final_hint'); setErrorKind('final') }
+          else { setError('provider_initializing'); setErrorKind('init') }
+        }
       }
       // 300ms 后重试；限制最大尝试次数，避免潜在无限循环
       if (attempt < 5) setTimeout(()=>{ loadImpl({ silent: opts?.silent, _attempt: attempt+1 }) }, 300)
@@ -180,7 +184,7 @@ export function usePools() {
     }
     if (loadingRef.current) return
     loadingRef.current = true
-    if (!opts?.silent) { setLoading(true); setError(null) } else { setRefreshing(true) }
+    if (!opts?.silent) { setLoading(true); setError(null); setErrorKind(null) } else { setRefreshing(true) }
     try {
       const poolAddrs: string[] = await factory.getPools()
       setTotalPools(poolAddrs.length)
@@ -431,10 +435,10 @@ export function usePools() {
   // 仅当成功拉取时再替换 UI，避免闪烁
   setPools(active)
   // 成功获取列表时清除旧错误（包括之前的 Provider 未就绪提示），即使过滤后为空也应该清除
-  if (error) setError(null)
+  if (error) { setError(null); setErrorKind(null) }
     } catch (e:any) {
       const msg = e?.message || String(e)
-      if (!opts?.silent) setError(msg)
+      if (!opts?.silent) { setError(msg); setErrorKind('other') }
       else {
         console.warn('[pools] silent refresh failed:', msg)
         ;(window as any).__toast?.show?.(msg, 'error')
@@ -450,5 +454,5 @@ export function usePools() {
   const refreshSilent = useCallback(async () => loadImpl({ silent: true }), [loadImpl])
 
   // 对外暴露：walletProvider 用于需要签名的交互；只读当前 RPC URL 供 UI 显示与调试
-  return { provider: walletProvider, readProvider, currentRpcUrl, pools, loading, error, load, refreshSilent, refreshing, totalPools, cancelledCount, hiddenCount }
+  return { provider: walletProvider, readProvider, currentRpcUrl, pools, loading, error, errorKind, load, refreshSilent, refreshing, totalPools, cancelledCount, hiddenCount }
 }
