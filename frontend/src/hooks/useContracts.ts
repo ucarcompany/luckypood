@@ -54,10 +54,11 @@ export function usePools() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pools, setPools] = useState<PoolInfo[]>([])
+  const [refreshing, setRefreshing] = useState(false)
   const loadingRef = useRef(false) // 防止并发加载
 
   const rewriteToBackendOrigin = (uri?: string | null) => {
-    try {
+  try {
       if (!uri) return undefined
       const base = BACKEND_URL ? new URL(BACKEND_URL) : null
       const u = new URL(uri)
@@ -89,7 +90,7 @@ export function usePools() {
     }
     if (loadingRef.current) return
     loadingRef.current = true
-    if (!opts?.silent) { setLoading(true); setError(null) }
+  if (!opts?.silent) { setLoading(true); setError(null) } else { setRefreshing(true) }
     try {
       const poolAddrs: string[] = await factory.getPools()
       // ===== 工具：分段批量读取日志，规避 BSC -32005 limit exceeded =====
@@ -337,10 +338,15 @@ export function usePools() {
   // 仅当成功拉取时再替换 UI，避免闪烁
   setPools(active)
     } catch (e:any) {
-      if (!opts?.silent) setError(e.message || String(e))
-      else console.warn('[pools] silent refresh failed:', e?.message || e)
+      const msg = e?.message || String(e)
+      if (!opts?.silent) setError(msg)
+      else {
+        console.warn('[pools] silent refresh failed:', msg)
+        ;(window as any).__toast?.show?.(msg, 'error')
+      }
     } finally {
       if (!opts?.silent) setLoading(false)
+      else setRefreshing(false)
       loadingRef.current = false
     }
   }, [provider, factory])
@@ -348,5 +354,5 @@ export function usePools() {
   const load = useCallback(async () => loadImpl({ silent: false }), [loadImpl])
   const refreshSilent = useCallback(async () => loadImpl({ silent: true }), [loadImpl])
 
-  return { provider, factory, pools, loading, error, load, refreshSilent }
+  return { provider, factory, pools, loading, error, load, refreshSilent, refreshing }
 }

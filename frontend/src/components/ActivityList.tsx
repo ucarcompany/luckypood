@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 export default function ActivityList() {
   const { t } = useTranslation()
-  const { pools, load, loading, error, refreshSilent } = usePools()
+  const { pools, load, loading, error, refreshSilent, refreshing } = usePools()
   const first = useRef(true)
   // 初始加载
   useEffect(() => {
@@ -17,13 +17,18 @@ export default function ActivityList() {
     return ()=> clearInterval(id)
   }, [refreshSilent])
   if (error) return <div style={{color:'tomato'}}>{t('error')}：{error}</div>
-  if (loading) return <div>{t('loading')}</div>
-  if (!pools.length) return <div>{t('empty')}</div>
+  // 保持旧列表：不在 loading 时直接清空；只在首次没有数据且非加载中时显示 empty
   return (
     <div>
-      <div style={{display:'flex', justifyContent:'flex-end', marginBottom:8}}>
-        <button onClick={load}>{t('refresh')}</button>
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+        <div style={{fontSize:12, color:'#64748b'}}>
+          {loading ? t('loading') : refreshing ? t('refreshing') : ''}
+        </div>
+        <button disabled={loading || refreshing} onClick={load}>
+          {loading || refreshing ? t('refreshing') : t('refresh')}
+        </button>
       </div>
+      {(!loading && pools.length===0) && <div>{t('empty')}</div>}
       {pools.map((p) => (
         <div key={p.address}>
           <ActivityCard info={p} onRefresh={refreshSilent} />
