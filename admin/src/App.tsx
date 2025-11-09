@@ -72,24 +72,36 @@ export default function App(){
   const [startTime, setStartTime] = useState('') // yyyy-MM-ddTHH:mm
   const [busy, setBusy] = useState(false)
 
+  async function waitForProvider(timeoutMs = 3000): Promise<any|null> {
+    const start = Date.now()
+    while (Date.now()-start < timeoutMs) {
+      const w: any = window as any
+      const cand = w.ethereum || w.okxwallet?.ethereum || w.okxwallet
+      if (cand && typeof cand.request === 'function') return cand
+      await new Promise(res=>setTimeout(res,150))
+    }
+    const w: any = window as any
+    return w.ethereum || w.okxwallet?.ethereum || w.okxwallet || null
+  }
+
   const connect = async () => {
     try {
-      const eth = (window as any).ethereum
-      if (!eth) return alert('未检测到钱包扩展（OKX/MetaMask）')
+      const eth = await waitForProvider(3000)
+      if (!eth) return alert('未检测到钱包扩展（OKX/MetaMask）。请确认扩展允许该站点访问，并刷新页面后重试。')
       // 使用 ethers v6 的 BrowserProvider
       const p: any = new BrowserProvider(eth)
   setProvider(p)
   setReadProvider(p)
-      const accs = await eth.request({ method: 'eth_requestAccounts' })
+      const accs = await (eth as any).request({ method: 'eth_requestAccounts' })
       setAccount(accs[0] ?? null)
       // 可选：自动切到 BSC Testnet（0x61）
       try {
-        const cid = await eth.request({ method: 'eth_chainId' })
+        const cid = await (eth as any).request({ method: 'eth_chainId' })
         if (cid !== '0x61') {
           try {
-            await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x61' }] })
+            await (eth as any).request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x61' }] })
           } catch {
-            await eth.request({
+            await (eth as any).request({
               method: 'wallet_addEthereumChain',
               params: [{
                 chainId: '0x61',
