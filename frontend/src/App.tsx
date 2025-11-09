@@ -3,6 +3,7 @@ import { BrowserProvider } from 'ethers'
 import './styles.css'
 import ActivityList from './components/ActivityList'
 import Transparency from './pages/Transparency'
+import DebugPanel from './components/DebugPanel'
 import { useWeb3 } from './web3'
 import { useTranslation } from 'react-i18next'
 import i18n from './i18n'
@@ -93,11 +94,22 @@ export default function App() {
         <div style={{display:'flex', gap:8, marginBottom:10}}>
           <button onClick={()=>setTab('list')} disabled={tab==='list'}>{t('tab_list')}</button>
           <button onClick={()=>setTab('transparency')} disabled={tab==='transparency'}>{t('tab_transparency')}</button>
+          {(() => {
+            const params = new URLSearchParams(window.location.search)
+            const show = params.get('debug') === '1' || localStorage.getItem('debug') === '1'
+            if (!show) return null
+            return <span style={{marginLeft:8, fontSize:12, color:'#64748b'}}>Debug on</span>
+          })()}
         </div>
         {tab==='list' ? (
           <>
             <h2>{t('activities')}</h2>
             <ActivityList />
+            {(() => {
+              const params = new URLSearchParams(window.location.search)
+              const show = params.get('debug') === '1' || localStorage.getItem('debug') === '1'
+              return show ? <DebugPanel /> : null
+            })()}
           </>
         ) : (
           <Transparency />
