@@ -21,6 +21,9 @@ export default function ActivityList() {
   if (!pools.length) return <div>{t('empty')}</div>
   return (
     <div>
+      <div style={{display:'flex', justifyContent:'flex-end', marginBottom:8}}>
+        <button onClick={load}>{t('refresh')}</button>
+      </div>
       {pools.map((p) => (
         <div key={p.address}>
           <ActivityCard info={p} onRefresh={refreshSilent} />
