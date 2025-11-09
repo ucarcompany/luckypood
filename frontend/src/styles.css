@@ -56,3 +56,22 @@ footer{margin-top:40px;color:var(--muted)}
 .hero svg{position:absolute;left:0;right:0;bottom:-1px;width:100%;height:70px}
 .hero h2{margin:0 0 6px 0}
 .hero p{margin:0;color:var(--muted)}
+
+/* Provider skeleton/loading */
+.provider-skeleton{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:12px}
+.sk-card{position:relative;overflow:hidden;border-radius:16px;background:linear-gradient(135deg,#f0f9ff,#f5f3ff);height:120px;border:1px solid #e2e8f0}
+.sk-card:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.7) 50%,rgba(255,255,255,0) 100%);animation:shimmer 1.8s linear infinite}
+@keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+
+/* Water drop pulse for provider init */
+.water-pulse{width:14px;height:14px;background:radial-gradient(circle at 35% 35%,#60a5fa 0%,#3b82f6 60%,#1d4ed8 100%);border-radius:50%;position:relative;box-shadow:0 0 0 0 rgba(59,130,246,.4);animation:dropPulse 2s ease-in-out infinite}
+@keyframes dropPulse{0%{box-shadow:0 0 0 0 rgba(59,130,246,.4)}70%{box-shadow:0 0 0 14px rgba(59,130,246,0)}100%{box-shadow:0 0 0 0 rgba(59,130,246,0)}}
+
+.fade-in{animation:fadeIn .35s ease forwards;opacity:0}
+@keyframes fadeIn{to{opacity:1}}
+
+.fade-out{animation:fadeOut .4s ease forwards}
+@keyframes fadeOut{to{opacity:0;transform:translateY(-4px)}}
+
+.provider-error{padding:10px 14px;border-radius:14px;background:linear-gradient(135deg,#fff,#f1f5f9);border:1px solid #e2e8f0;font-size:13px;color:#475569;display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.provider-error button{background:#3b82f6;color:#fff;border-color:#3b82f6}

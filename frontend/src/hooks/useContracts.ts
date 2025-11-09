@@ -172,7 +172,7 @@ export function usePools() {
       // 不再直接抛出“Provider 未就绪”错误，避免首次渲染时闪现；改为轻量重试。
       if (!opts?.silent) {
         // 保持现有列表与错误；若已经有数据则不覆盖错误
-        if (pools.length === 0) setError('Provider 初始化中，请稍候...')
+        if (pools.length === 0) setError(attempt >= 5 ? '网络可能异常，请刷新或检查网络，然后点击下方按钮重试。' : 'Provider 初始化中，请稍候...')
       }
       // 300ms 后重试；限制最大尝试次数，避免潜在无限循环
       if (attempt < 5) setTimeout(()=>{ loadImpl({ silent: opts?.silent, _attempt: attempt+1 }) }, 300)

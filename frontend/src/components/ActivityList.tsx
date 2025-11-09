@@ -6,6 +6,10 @@ import { useTranslation } from 'react-i18next'
 export default function ActivityList() {
   const { t } = useTranslation()
   const { pools, load, loading, error, refreshSilent, refreshing, totalPools, cancelledCount, hiddenCount } = usePools()
+  const showDebug = (() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('debug') === '1' || localStorage.getItem('debug') === '1'
+  })()
   const first = useRef(true)
   // 初始加载
   useEffect(() => {
@@ -18,8 +22,24 @@ export default function ActivityList() {
   }, [refreshSilent])
   // 错误信息改为非阻塞显示，让已有池仍可展示 & 用户能点击刷新
   const errorBanner = error ? (
-    <div style={{ color: 'tomato', padding: '6px 12px', fontSize: 13, background: 'rgba(255,0,0,0.06)', border: '1px solid rgba(255,0,0,0.3)', borderRadius: 4, marginBottom: 8 }}>
-      {t('error')}：{error}
+    <div className={`provider-error ${error.includes('初始化中') ? 'fade-in' : ''}`}> 
+      <div className="water-pulse" />
+      <span>{error}</span>
+      {error.includes('初始化中') && (
+        <button
+          style={{marginLeft:'auto'}}
+          onClick={()=>{
+            // 强制重新尝试：调用 load() 并清空本地 debug 切换缓存可选
+            load()
+          }}
+        >{t('refresh')}</button>
+      )}
+      {!error.includes('初始化中') && (
+        <button
+          style={{marginLeft:'auto'}}
+          onClick={()=>{ location.reload() }}
+        >{t('refresh')}</button>
+      )}
     </div>
   ) : null
   // 保持旧列表：不在 loading 时直接清空；只在首次没有数据且非加载中时显示 empty
@@ -32,21 +52,22 @@ export default function ActivityList() {
       </div>
       {errorBanner}
       {(!loading && pools.length===0) && (
-        <div style={{fontSize:13, color:'#475569'}}>
+        <div style={{fontSize:13, color:'#475569'}} className="fade-in">
           {t('empty')}
-          {(() => {
-            const params = new URLSearchParams(window.location.search)
-            const debugOn = params.get('debug') === '1' || localStorage.getItem('debug') === '1'
-            if (!debugOn) return null
-            return (
-              <div style={{marginTop:4, lineHeight:1.4}}>
-                <div>totalPools={totalPools}</div>
-                <div>cancelled={cancelledCount}</div>
-                <div>hidden={hiddenCount}</div>
-                <div>filteredActive={pools.length}</div>
-              </div>
-            )
-          })()}
+          {showDebug && (
+            <div style={{marginTop:4, lineHeight:1.4}}>
+              <div>totalPools={totalPools}</div>
+              <div>cancelled={cancelledCount}</div>
+              <div>hidden={hiddenCount}</div>
+              <div>filteredActive={pools.length}</div>
+            </div>
+          )}
+        </div>
+      )}
+      {/* Skeleton 占位：首次加载或 provider 初始化阶段且无池时显示 */}
+      {(loading && pools.length===0) && (
+        <div className="provider-skeleton">
+          {Array.from({ length: 4 }).map((_,i)=>(<div key={i} className="sk-card" />))}
         </div>
       )}
       {pools.map((p) => (
