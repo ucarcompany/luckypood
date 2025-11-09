@@ -62,7 +62,18 @@ app.use('/api', limiter);
 
 // Static hosting for uploaded files and metadata
 app.use('/uploads', express.static(UPLOAD_DIR, { immutable: true, maxAge: '365d' }));
-app.use('/meta', express.static(METADATA_DIR, { immutable: true, maxAge: '365d', index: 'index.json' }));
+// Do not cache JSON metadata (especially index.json) to avoid stale localhost links in clients
+app.use('/meta', express.static(METADATA_DIR, {
+  index: 'index.json',
+  cacheControl: true,
+  immutable: false,
+  maxAge: 0,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.json')) {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+  }
+}));
 
 // Health check
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
