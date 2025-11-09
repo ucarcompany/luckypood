@@ -14,9 +14,50 @@ const DEFAULT_RPC = (import.meta.env.VITE_DEFAULT_RPC || '').trim()
 // 可选：指定工厂合约的部署起始区块，避免从 0 区块遍历导致 BSC -32005 limit exceeded
 const FACTORY_DEPLOY_BLOCK = Number((import.meta.env as any).VITE_FACTORY_DEPLOY_BLOCK || '0') || 0
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000').trim()
-const API_KEY = (import.meta.env.VITE_BACKEND_API_KEY || '').trim()
+const PASS_HASH_ENV = (import.meta.env as any).VITE_ADMIN_PASS_HASH ? String((import.meta.env as any).VITE_ADMIN_PASS_HASH).trim() : ''
+const API_KEY_ENV = (import.meta.env.VITE_BACKEND_API_KEY || '').trim()
+
+async function sha256Hex(input: string) {
+  const enc = new TextEncoder().encode(input)
+  const buf = await crypto.subtle.digest('SHA-256', enc)
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('')
+}
+
+function getApiKey(): string {
+  return localStorage.getItem('admin_key') || API_KEY_ENV || ''
+}
 
 export default function App(){
+  // Simple entry password gate (optional). If VITE_ADMIN_PASS_HASH is set, require login
+  const [authed, setAuthed] = useState(!PASS_HASH_ENV)
+  const [pwd, setPwd] = useState('')
+  const [authBusy, setAuthBusy] = useState(false)
+  useEffect(()=>{
+    if (!PASS_HASH_ENV) return
+    const k = localStorage.getItem('admin_key')
+    if (!k) return
+    (async ()=>{
+      const h = await sha256Hex(k)
+      if (h === PASS_HASH_ENV) setAuthed(true)
+      else localStorage.removeItem('admin_key')
+    })()
+  }, [])
+  const doLogin = async () => {
+    if (!PASS_HASH_ENV) { setAuthed(true); return }
+    setAuthBusy(true)
+    try {
+      const h = await sha256Hex(pwd)
+      if (h === PASS_HASH_ENV) {
+        localStorage.setItem('admin_key', pwd)
+        setAuthed(true)
+        setPwd('')
+      } else {
+        alert('密码错误')
+      }
+    } finally { setAuthBusy(false) }
+  }
+  const logout = () => { localStorage.removeItem('admin_key'); setAuthed(false) }
+
   const [account, setAccount] = useState<string | null>(null)
   const [provider, setProvider] = useState<any>(null)
   const [readProvider, setReadProvider] = useState<any>(null)
@@ -200,7 +241,7 @@ export default function App(){
     const fd = new FormData()
     fd.append('file', image)
     const headers: Record<string,string> = {}
-    if (API_KEY) headers['x-api-key'] = API_KEY
+    const API_KEY = getApiKey(); if (API_KEY) headers['x-api-key'] = API_KEY
     const res = await fetch(`${BACKEND_URL}/api/upload`, { method: 'POST', body: fd, headers })
     if (!res.ok) throw new Error('Upload failed')
     const data = await res.json()
@@ -212,7 +253,7 @@ export default function App(){
     const body: any = { title: name, description: desc, image: imageUrl }
     if (startAt) body.startAt = startAt
     const headers: Record<string,string> = { 'Content-Type': 'application/json' }
-    if (API_KEY) headers['x-api-key'] = API_KEY
+    const API_KEY = getApiKey(); if (API_KEY) headers['x-api-key'] = API_KEY
     const res = await fetch(`${BACKEND_URL}/api/metadata`, { method: 'POST', headers, body: JSON.stringify(body) })
     if (!res.ok) throw new Error('Create metadata failed')
     const data = await res.json()
@@ -248,7 +289,7 @@ export default function App(){
           if (poolAddr) {
             // 回写后端索引（带重试与指数退避），便于前端读取 metadata
             const headers: Record<string,string> = { 'Content-Type': 'application/json' }
-            if (API_KEY) headers['x-api-key'] = API_KEY
+            { const dynKey = getApiKey(); if (dynKey) headers['x-api-key'] = dynKey }
             const attemptWrite = async () => {
               let delay = 500
               for (let i=0;i<3;i++) {
@@ -296,7 +337,7 @@ export default function App(){
           const uri = String(parsed?.args?.[3] || '')
           if (poolAddr && uri) {
             const headers: Record<string,string> = { 'Content-Type':'application/json' }
-            if (API_KEY) headers['x-api-key'] = API_KEY
+            { const dynKey = getApiKey(); if (dynKey) headers['x-api-key'] = dynKey }
             const r = await fetch(`${BACKEND_URL}/api/meta/index`, { method:'POST', headers, body: JSON.stringify({ pool: poolAddr, uri }) })
             if (r.ok) ok++; else fail++
           }
@@ -309,6 +350,18 @@ export default function App(){
 
   return (
     <div className="container">
+      {PASS_HASH_ENV && !authed ? (
+        <div className="card" style={{maxWidth:420, margin:'80px auto'}}>
+          <h3>管理员登录</h3>
+          <div style={{fontSize:12,color:'#666',marginBottom:8}}>请输入入口密码（仅本页校验；通过后会保存在本机 LocalStorage）。</div>
+          <input type="password" value={pwd} onChange={e=>setPwd(e.target.value)} placeholder="入口密码" />
+          <div style={{marginTop:12}}>
+            <button disabled={authBusy} onClick={doLogin}>{authBusy ? '验证中...' : '登录'}</button>
+          </div>
+        </div>
+      ) : null}
+      {(!PASS_HASH_ENV || authed) && (
+      <>
       <header>
         <h1>Lucky Pool Admin</h1>
         <div>
@@ -317,6 +370,7 @@ export default function App(){
           )}
           <button style={{marginLeft:8}} onClick={loadPools}>刷新列表</button>
           <button style={{marginLeft:8}} disabled={syncing} onClick={syncIndex}>{syncing ? '同步中...' : '一键修复索引'}</button>
+          {PASS_HASH_ENV && <button style={{marginLeft:8}} onClick={logout}>退出登录</button>}
         </div>
       </header>
 
@@ -412,6 +466,8 @@ export default function App(){
       )}
 
       <IndexManager />
+      </>
+      )}
     </div>
   )
 }
@@ -424,7 +480,8 @@ function IndexManager() {
   const [uri, setUri] = useState('')
   const [busy, setBusy] = useState(false)
   const backend = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000').trim()
-  const apiKey = (import.meta.env.VITE_BACKEND_API_KEY || '').trim()
+  const apiKeyEnv = (import.meta.env.VITE_BACKEND_API_KEY || '').trim()
+  const getApiKey = () => localStorage.getItem('admin_key') || apiKeyEnv
 
   const loadIndex = async () => {
     setLoading(true)
@@ -447,8 +504,8 @@ function IndexManager() {
     if (!pool || !uri) return alert('请输入 pool 与 URI')
     setBusy(true)
     try {
-      const headers: Record<string,string> = { 'Content-Type':'application/json' }
-      if (apiKey) headers['x-api-key'] = apiKey
+  const headers: Record<string,string> = { 'Content-Type':'application/json' }
+  { const dyn = getApiKey(); if (dyn) headers['x-api-key'] = dyn }
       const r = await fetch(`${backend}/api/meta/index`, { method:'POST', headers, body: JSON.stringify({ pool, uri }) })
       if (!r.ok) throw new Error('写入失败')
       await loadIndex()
@@ -463,8 +520,8 @@ function IndexManager() {
     delete copy[addr]
     // 直接覆盖静态文件：需要后端支持写删除；目前后端只有写/追加接口 => 用空 URI 覆盖
     try {
-      const headers: Record<string,string> = { 'Content-Type':'application/json' }
-      if (apiKey) headers['x-api-key'] = apiKey
+  const headers: Record<string,string> = { 'Content-Type':'application/json' }
+  { const dyn = getApiKey(); if (dyn) headers['x-api-key'] = dyn }
       const r = await fetch(`${backend}/api/meta/index`, { method:'POST', headers, body: JSON.stringify({ pool: addr, uri: '' }) })
       if (!r.ok) throw new Error('删除写入失败')
       await loadIndex()
