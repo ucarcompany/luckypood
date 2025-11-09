@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 export default function ActivityList() {
   const { t } = useTranslation()
-  const { pools, load, loading, error, refreshSilent, refreshing } = usePools()
+  const { pools, load, loading, error, refreshSilent, refreshing, totalPools, cancelledCount, hiddenCount } = usePools()
   const first = useRef(true)
   // 初始加载
   useEffect(() => {
@@ -31,7 +31,24 @@ export default function ActivityList() {
         </div>
       </div>
       {errorBanner}
-      {(!loading && pools.length===0) && <div>{t('empty')}</div>}
+      {(!loading && pools.length===0) && (
+        <div style={{fontSize:13, color:'#475569'}}>
+          {t('empty')}
+          {(() => {
+            const params = new URLSearchParams(window.location.search)
+            const debugOn = params.get('debug') === '1' || localStorage.getItem('debug') === '1'
+            if (!debugOn) return null
+            return (
+              <div style={{marginTop:4, lineHeight:1.4}}>
+                <div>totalPools={totalPools}</div>
+                <div>cancelled={cancelledCount}</div>
+                <div>hidden={hiddenCount}</div>
+                <div>filteredActive={pools.length}</div>
+              </div>
+            )
+          })()}
+        </div>
+      )}
       {pools.map((p) => (
         <div key={p.address}>
           <ActivityCard info={p} onRefresh={refreshSilent} />

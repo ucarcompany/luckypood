@@ -63,6 +63,10 @@ export function usePools() {
   const [pools, setPools] = useState<PoolInfo[]>([])
   const [refreshing, setRefreshing] = useState(false)
   const loadingRef = useRef(false) // 防止并发加载
+  // 调试统计：原始池数量 / 过滤原因
+  const [totalPools, setTotalPools] = useState(0)
+  const [cancelledCount, setCancelledCount] = useState(0)
+  const [hiddenCount, setHiddenCount] = useState(0)
 
   const rewriteToBackendOrigin = (uri?: string | null) => {
   try {
@@ -149,7 +153,8 @@ export function usePools() {
   // 初次挂载：建立只读 provider
   useEffect(()=> { ensureReadProvider(true) }, [])
 
-  const loadImpl = useCallback(async (opts?: { silent?: boolean }) => {
+  const loadImpl = useCallback(async (opts?: { silent?: boolean; _attempt?: number }) => {
+    const attempt = (opts?._attempt ?? 0)
     // 在静默刷新阶段执行健康优选（第二层回退逻辑）
     if (opts?.silent) {
       await ensureReadProvider(false)
@@ -169,8 +174,8 @@ export function usePools() {
         // 保持现有列表与错误；若已经有数据则不覆盖错误
         if (pools.length === 0) setError('Provider 初始化中，请稍候...')
       }
-      // 300ms 后重试一次（最多 3 次由外部触发即可，避免过多递归）
-      setTimeout(()=>{ loadImpl({ silent: opts?.silent }) }, 300)
+      // 300ms 后重试；限制最大尝试次数，避免潜在无限循环
+      if (attempt < 5) setTimeout(()=>{ loadImpl({ silent: opts?.silent, _attempt: attempt+1 }) }, 300)
       return
     }
     if (loadingRef.current) return
@@ -178,6 +183,7 @@ export function usePools() {
     if (!opts?.silent) { setLoading(true); setError(null) } else { setRefreshing(true) }
     try {
       const poolAddrs: string[] = await factory.getPools()
+      setTotalPools(poolAddrs.length)
       // ===== 工具：分段批量读取日志，规避 BSC -32005 limit exceeded =====
       const getLogsBatched = async (
         prov: any,
@@ -418,12 +424,14 @@ export function usePools() {
       }
   // 过滤掉已取消的活动
   const active = res.filter(p => !p.cancelled && !HIDDEN_POOLS.includes(p.address.toLowerCase()))
+  setCancelledCount(res.filter(p=>p.cancelled).length)
+  setHiddenCount(res.filter(p=>HIDDEN_POOLS.includes(p.address.toLowerCase())).length)
   // sort by sortOrder asc if present
   active.sort((a,b)=> (a.sortOrder ?? 1e9) - (b.sortOrder ?? 1e9))
   // 仅当成功拉取时再替换 UI，避免闪烁
   setPools(active)
-  // 成功获取列表时清除旧错误（包括之前的 Provider 未就绪提示）
-  if (active.length > 0 && error) setError(null)
+  // 成功获取列表时清除旧错误（包括之前的 Provider 未就绪提示），即使过滤后为空也应该清除
+  if (error) setError(null)
     } catch (e:any) {
       const msg = e?.message || String(e)
       if (!opts?.silent) setError(msg)
@@ -436,11 +444,11 @@ export function usePools() {
       else setRefreshing(false)
       loadingRef.current = false
     }
-  }, [readProvider, walletProvider, ensureReadProvider, BACKEND_URL, FACTORY_ADDRESS, FACTORY_DEPLOY_BLOCK, HIDDEN_POOLS, error, pools])
+  }, [readProvider, walletProvider, ensureReadProvider, error, pools])
 
   const load = useCallback(async () => loadImpl({ silent: false }), [loadImpl])
   const refreshSilent = useCallback(async () => loadImpl({ silent: true }), [loadImpl])
 
   // 对外暴露：walletProvider 用于需要签名的交互；只读当前 RPC URL 供 UI 显示与调试
-  return { provider: walletProvider, readProvider, currentRpcUrl, pools, loading, error, load, refreshSilent, refreshing }
+  return { provider: walletProvider, readProvider, currentRpcUrl, pools, loading, error, load, refreshSilent, refreshing, totalPools, cancelledCount, hiddenCount }
 }
