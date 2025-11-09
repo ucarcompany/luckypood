@@ -27,18 +27,14 @@ export type PoolInfo = {
 }
 
 export function useEthersProvider() {
-  const [provider, setProvider] = useState<BrowserProvider | JsonRpcProvider | null>(null)
+  // 钱包签名用 provider（只在用户有钱包时用于交易）；读取使用独立 readProvider 优选 RPC
+  const [walletProvider, setWalletProvider] = useState<BrowserProvider | null>(null)
   useEffect(() => {
-    // 优先使用 DEFAULT_RPC 作为只读 provider，避免钱包连错链导致读取失败
-    if (DEFAULT_RPC) {
-      setProvider(new JsonRpcProvider(DEFAULT_RPC))
-      return
-    }
     if ((window as any).ethereum) {
-      setProvider(new BrowserProvider((window as any).ethereum))
+      try { setWalletProvider(new BrowserProvider((window as any).ethereum)) } catch {}
     }
   }, [])
-  return provider
+  return walletProvider
 }
 
 export function useFactory(provider: BrowserProvider | JsonRpcProvider | null) {
@@ -48,9 +44,20 @@ export function useFactory(provider: BrowserProvider | JsonRpcProvider | null) {
   }, [provider])
 }
 
+// 只读 RPC 候选（可扩展）
+const RPC_CANDIDATES: string[] = [
+  ...(DEFAULT_RPC ? [DEFAULT_RPC] : []),
+  'https://data-seed-prebsc-2-s1.binance.org:8545',
+  'https://data-seed-prebsc-1-s2.binance.org:8545'
+]
+
 export function usePools() {
-  const provider = useEthersProvider()
-  const factory = useFactory(provider)
+  const walletProvider = useEthersProvider()
+  // 独立只读 provider，用于批量读取；允许在静默刷新期间重新评估与切换
+  const [readProvider, setReadProvider] = useState<JsonRpcProvider | null>(null)
+  const [currentRpcUrl, setCurrentRpcUrl] = useState<string | null>(null)
+  const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null)
+  const [lastHealthCheckAt, setLastHealthCheckAt] = useState<number>(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pools, setPools] = useState<PoolInfo[]>([])
@@ -73,7 +80,80 @@ export function usePools() {
     } catch { return uri || undefined }
   }
 
+  const ensureReadProvider = useCallback(async (forceFullScan = false) => {
+    // 首次或当前 provider 已失效时：扫描所有候选，选择最快且区块高度不落后
+    const now = Date.now()
+    const needFull = forceFullScan || !readProvider || !currentRpcUrl || (now - lastHealthCheckAt > 180000) // 每 3 分钟做一次全扫描
+    // 轻量健康检测：测当前 provider 延迟与区块是否滞后
+    const fastScan = async () => {
+      if (!readProvider) return false
+      try {
+        const t0 = performance.now()
+        const block = await readProvider.getBlockNumber()
+        const dt = performance.now() - t0
+        setLastLatencyMs(Math.round(dt))
+        // 若延迟过高或 block -1（异常），触发全扫描
+        return dt < 2500 && block > 0
+      } catch {
+        return false
+      }
+    }
+    if (!needFull) {
+      const healthy = await fastScan()
+      if (healthy) return
+    }
+    // 全扫描：并发测候选 RPC
+    const results: Array<{ url:string; latency:number; block:number }> = []
+    await Promise.all(RPC_CANDIDATES.map(async url => {
+      try {
+        const prov = new JsonRpcProvider(url)
+        const t0 = performance.now()
+        const block = await prov.getBlockNumber()
+        const latency = performance.now() - t0
+        results.push({ url, latency, block })
+      } catch {
+        /* ignore failed endpoint */
+      }
+    }))
+    if (results.length === 0) {
+      // 兜底：保留现有 readProvider 或尝试从第一个候选构建
+      if (!readProvider && RPC_CANDIDATES.length>0) {
+        try {
+          const p = new JsonRpcProvider(RPC_CANDIDATES[0])
+          setReadProvider(p)
+          setCurrentRpcUrl(RPC_CANDIDATES[0])
+        } catch {}
+      }
+      return
+    }
+    // 找最大区块高度（排除明显落后节点）
+    const maxBlock = results.reduce((m,r)=> r.block>m? r.block : m, 0)
+    const filtered = results.filter(r => (maxBlock - r.block) <= 2) // 允许最多落后 2 个块
+    const candidateSet = filtered.length>0 ? filtered : results
+    candidateSet.sort((a,b)=> a.latency - b.latency)
+    const best = candidateSet[0]
+    // 若当前 provider URL 与 best 不同且优势明显（延迟改善 30% 以上）则切换
+    if (!currentRpcUrl || best.url !== currentRpcUrl || (lastLatencyMs!=null && best.latency < lastLatencyMs * 0.7)) {
+      try {
+        const newProv = new JsonRpcProvider(best.url)
+        // 再做一次轻确认
+        await newProv.getBlockNumber()
+        setReadProvider(newProv)
+        setCurrentRpcUrl(best.url)
+        setLastLatencyMs(Math.round(best.latency))
+      } catch {}
+    }
+    setLastHealthCheckAt(Date.now())
+  }, [readProvider, currentRpcUrl, lastLatencyMs, lastHealthCheckAt])
+
+  // 初次挂载：建立只读 provider
+  useEffect(()=> { ensureReadProvider(true) }, [])
+
   const loadImpl = useCallback(async (opts?: { silent?: boolean }) => {
+    // 在静默刷新阶段执行健康优选（第二层回退逻辑）
+    if (opts?.silent) {
+      await ensureReadProvider(false)
+    }
     if (!FACTORY_ADDRESS) {
       if (!opts?.silent) {
         setPools([])
@@ -81,16 +161,21 @@ export function usePools() {
       }
       return
     }
-    if (!provider || !factory) {
+    const readProv: JsonRpcProvider | BrowserProvider | null = readProvider || walletProvider
+    const factory = (readProv && FACTORY_ADDRESS) ? new Contract(FACTORY_ADDRESS, FactoryArtifact.abi, readProv) : null
+    if (!readProv || !factory) {
+      // 不再直接抛出“Provider 未就绪”错误，避免首次渲染时闪现；改为轻量重试。
       if (!opts?.silent) {
-        setPools([])
-        setError('Provider 未就绪或工厂实例创建失败（请检查 DEFAULT_RPC 与工厂地址）')
+        // 保持现有列表与错误；若已经有数据则不覆盖错误
+        if (pools.length === 0) setError('Provider 初始化中，请稍候...')
       }
+      // 300ms 后重试一次（最多 3 次由外部触发即可，避免过多递归）
+      setTimeout(()=>{ loadImpl({ silent: opts?.silent }) }, 300)
       return
     }
     if (loadingRef.current) return
     loadingRef.current = true
-  if (!opts?.silent) { setLoading(true); setError(null) } else { setRefreshing(true) }
+    if (!opts?.silent) { setLoading(true); setError(null) } else { setRefreshing(true) }
     try {
       const poolAddrs: string[] = await factory.getPools()
       // ===== 工具：分段批量读取日志，规避 BSC -32005 limit exceeded =====
@@ -129,7 +214,7 @@ export function usePools() {
         const eventFrag = iface.getEvent('PoolCreated')
         const topic0 = (eventFrag as any).topicHash || (eventFrag as any).topic || (iface as any).getEventTopic?.('PoolCreated')
         const startBlock = FACTORY_DEPLOY_BLOCK || 0
-        const logs = await getLogsBatched(provider, { address: FACTORY_ADDRESS, topics: [topic0] }, { fromBlock: startBlock })
+  const logs = await getLogsBatched(readProv, { address: FACTORY_ADDRESS, topics: [topic0] }, { fromBlock: startBlock })
         for (const log of logs) {
           const parsed = iface.parseLog({ topics: log.topics, data: log.data })
           if (parsed && parsed.args) {
@@ -178,7 +263,7 @@ export function usePools() {
 
       const res: PoolInfo[] = []
       for (const addr of poolAddrs) {
-        const pool = new Contract(addr, PoolArtifact.abi, provider)
+        const pool = new Contract(addr, PoolArtifact.abi, readProv)
         let info: any
         try {
           info = await pool.getInfo()
@@ -337,6 +422,8 @@ export function usePools() {
   active.sort((a,b)=> (a.sortOrder ?? 1e9) - (b.sortOrder ?? 1e9))
   // 仅当成功拉取时再替换 UI，避免闪烁
   setPools(active)
+  // 成功获取列表时清除旧错误（包括之前的 Provider 未就绪提示）
+  if (active.length > 0 && error) setError(null)
     } catch (e:any) {
       const msg = e?.message || String(e)
       if (!opts?.silent) setError(msg)
@@ -349,10 +436,11 @@ export function usePools() {
       else setRefreshing(false)
       loadingRef.current = false
     }
-  }, [provider, factory])
+  }, [readProvider, walletProvider, ensureReadProvider, BACKEND_URL, FACTORY_ADDRESS, FACTORY_DEPLOY_BLOCK, HIDDEN_POOLS, error, pools])
 
   const load = useCallback(async () => loadImpl({ silent: false }), [loadImpl])
   const refreshSilent = useCallback(async () => loadImpl({ silent: true }), [loadImpl])
 
-  return { provider, factory, pools, loading, error, load, refreshSilent, refreshing }
+  // 对外暴露：walletProvider 用于需要签名的交互；只读当前 RPC URL 供 UI 显示与调试
+  return { provider: walletProvider, readProvider, currentRpcUrl, pools, loading, error, load, refreshSilent, refreshing }
 }

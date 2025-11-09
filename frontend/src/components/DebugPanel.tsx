@@ -7,23 +7,34 @@ import { useWeb3 } from '../web3'
 export default function DebugPanel(){
   const { chainIdHex } = useWeb3()
   const [rpcOk, setRpcOk] = useState<string>('pending')
+  const [rpcMatrix, setRpcMatrix] = useState<Array<{ url:string; status:string; ms?:number }>>([])
   const [factoryOk, setFactoryOk] = useState<string>('pending')
   const [poolsCount, setPoolsCount] = useState<number | null>(null)
 
   useEffect(()=>{
     (async ()=>{
-      if (DEFAULT_RPC) {
+      const seeds = [
+        ...(DEFAULT_RPC ? [DEFAULT_RPC] : []),
+        'https://data-seed-prebsc-2-s1.binance.org:8545',
+        'https://data-seed-prebsc-1-s2.binance.org:8545'
+      ]
+      const results: Array<{ url:string; status:string; ms?:number }> = []
+      let anyOk = false
+      for (const url of seeds) {
+        const t0 = performance.now()
         try {
-          const r = await fetch(DEFAULT_RPC, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({jsonrpc:'2.0', id:1, method:'eth_blockNumber', params:[]}) })
+          const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({jsonrpc:'2.0', id:1, method:'eth_blockNumber', params:[]}) })
           const j = await r.json().catch(()=>null)
-          if (j && j.result) setRpcOk('ok')
-          else setRpcOk('bad_response')
+          const ms = Math.round(performance.now() - t0)
+          if (j && j.result) { results.push({ url, status:'ok', ms }); anyOk = true }
+          else { results.push({ url, status:'bad_response', ms }) }
         } catch (e:any) {
-          setRpcOk('failed: '+(e?.message||String(e)))
+          const ms = Math.round(performance.now() - t0)
+          results.push({ url, status: 'failed: '+(e?.message||String(e)), ms })
         }
-      } else {
-        setRpcOk('no_DEFAULT_RPC')
       }
+      setRpcMatrix(results)
+      setRpcOk(anyOk ? 'ok' : (results.length ? 'all_failed' : 'no_DEFAULT_RPC'))
     })()
   }, [])
 
@@ -52,7 +63,16 @@ export default function DebugPanel(){
         <div>BACKEND_URL: <code>{BACKEND_URL || '(empty)'}</code></div>
         <div>Detected chainId: <code>{chainIdHex || '(unknown)'}</code></div>
         <div>RPC check: <code>{rpcOk}</code></div>
-        <div>Factory getPools: <code>{factoryOk}</code>{poolsCount!=null && <span>，pools={poolsCount}</span>}</div>
+        {rpcMatrix.length>0 && (
+          <div style={{marginTop:4}}>
+            {rpcMatrix.map((r)=> (
+              <div key={r.url} style={{fontFamily:'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize:12}}>
+                {r.status==='ok' ? '✅' : '⛔'} {r.url} — {r.status}{typeof r.ms==='number' ? ` (${r.ms}ms)` : ''}
+              </div>
+            ))}
+          </div>
+        )}
+  <div>Factory getPools: <code>{factoryOk}</code>{poolsCount!=null && <span>，pools={poolsCount}</span>}</div>
         <div style={{marginTop:6}}>
           <button onClick={()=>{ localStorage.setItem('debug','0'); location.replace(location.pathname) }}>隐藏</button>
           <button style={{marginLeft:8}} onClick={()=>{ localStorage.setItem('debug','1'); location.reload() }}>刷新诊断</button>
