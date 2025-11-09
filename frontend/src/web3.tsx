@@ -44,7 +44,11 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
     })()
 
     const onAccountsChanged = (accs: string[]) => setAccount(accs[0] ?? null)
-    const onChainChanged = (cid: string) => setChainIdHex(cid)
+    const onChainChanged = (cid: string) => {
+      setChainIdHex(cid)
+      // 重新实例化 Provider，避免部分钱包在链切换后旧实例仍引用旧网络
+      try { setProvider(new BrowserProvider(eth as any)) } catch {}
+    }
     ;(eth as any).on?.('accountsChanged', onAccountsChanged)
     ;(eth as any).on?.('chainChanged', onChainChanged)
     unsub = () => {

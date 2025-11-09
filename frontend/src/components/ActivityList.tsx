@@ -7,6 +7,11 @@ export default function ActivityList() {
   const { t } = useTranslation()
   const { pools, load, loading, error } = usePools()
   useEffect(() => { load() }, [load])
+  // 定时刷新，保证进度等信息能接近实时
+  useEffect(()=>{
+    const id = setInterval(()=>{ load() }, 10000)
+    return ()=> clearInterval(id)
+  }, [load])
   if (error) return <div style={{color:'tomato'}}>{t('error')}：{error}</div>
   if (loading) return <div>{t('loading')}</div>
   if (!pools.length) return <div>{t('empty')}</div>

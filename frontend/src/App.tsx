@@ -60,7 +60,7 @@ export default function App() {
       <header>
         <div className="title">
           <h1>{t('title')}</h1>
-          <span className="subtitle">愿望在此汇聚，幸运自此发生</span>
+          <span className="subtitle">{t('subtitle_tagline')}</span>
         </div>
         <div style={{display:'flex', alignItems:'center', gap:8}}>
           <select value={lang} onChange={(e)=>onLangChange(e.target.value)} style={{padding:'6px 8px', borderRadius:8}}>
@@ -77,8 +77,9 @@ export default function App() {
 
       <section>
         <div className="hero">
-          <h2>许愿池</h2>
-          <p>投入你的心愿与 1 USDT，随着池水的波动与群星的加持，幸运将由 VRF 公正降临。</p>
+            <h2>{t('wish_pool')}</h2>
+          <p>{t('subtitle_tagline')}</p>
+            <p style={{color:'#94a3b8', fontSize:12, marginTop:6}}>{t('hero_note')}</p>
           <svg viewBox="0 0 1440 320" preserveAspectRatio="none" aria-hidden>
             <path fill="var(--wave)" fillOpacity="0.3" d="M0,128L60,160C120,192,240,256,360,245.3C480,235,600,149,720,138.7C840,128,960,192,1080,208C1200,224,1320,192,1380,176L1440,160L1440,320L1380,320C1320,320,1200,320,1080,320C960,320,840,320,720,320C600,320,480,320,360,320C240,320,120,320,60,320L0,320Z"></path>
           </svg>
@@ -90,8 +91,8 @@ export default function App() {
 
       <section>
         <div style={{display:'flex', gap:8, marginBottom:10}}>
-          <button onClick={()=>setTab('list')} disabled={tab==='list'}>活动列表</button>
-          <button onClick={()=>setTab('transparency')} disabled={tab==='transparency'}>透明度</button>
+          <button onClick={()=>setTab('list')} disabled={tab==='list'}>{t('tab_list')}</button>
+          <button onClick={()=>setTab('transparency')} disabled={tab==='transparency'}>{t('tab_transparency')}</button>
         </div>
         {tab==='list' ? (
           <>
@@ -104,7 +105,7 @@ export default function App() {
       </section>
 
       <footer>
-        <small>合约与资金透明：所有交易均在链上可查</small>
+        <small>{t('footer_note')}</small>
         <div style={{marginTop:8, display:'flex', gap:8, flexWrap:'wrap'}}>
           {(() => {
             const dappUrl = (PUBLIC_URL && PUBLIC_URL.length>0) ? PUBLIC_URL : (window?.location?.origin || '')
@@ -112,8 +113,8 @@ export default function App() {
             const okx = `okx://wallet/dapp?url=${encodeURIComponent(dappUrl)}`
             return (
               <>
-                <a href={mm} target="_blank" rel="noreferrer"><button>用 MetaMask 打开</button></a>
-                <a href={okx}><button>用 OKX 打开</button></a>
+                <a href={mm} target="_blank" rel="noreferrer"><button>{t('open_metamask')}</button></a>
+                <a href={okx}><button>{t('open_okx')}</button></a>
               </>
             )
           })()}

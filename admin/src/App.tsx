@@ -23,8 +23,13 @@ async function sha256Hex(input: string) {
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('')
 }
 
+// 仅用于后端鉴权的 API Key（与入口密码分离）。
+// 读取顺序：localStorage.admin_api_key -> 环境变量 VITE_BACKEND_API_KEY。
+// 若包含非 ASCII 字符，则忽略（防止浏览器抛出 "String contains non ISO-8859-1 code point"）。
 function getApiKey(): string {
-  return localStorage.getItem('admin_key') || API_KEY_ENV || ''
+  const k = (localStorage.getItem('admin_api_key') || API_KEY_ENV || '').trim()
+  // 可见 ASCII 范围（0x20-0x7E）；保守处理避免换行/控制字符
+  return /^[\x20-\x7E]*$/.test(k) ? k : ''
 }
 
 export default function App(){
@@ -34,6 +39,7 @@ export default function App(){
   const [authBusy, setAuthBusy] = useState(false)
   useEffect(()=>{
     if (!PASS_HASH_ENV) return
+    // 入口密码依旧存放在 admin_key，以保持兼容；但它不会再被当作 API Key 使用。
     const k = localStorage.getItem('admin_key')
     if (!k) return
     (async ()=>{
@@ -61,6 +67,7 @@ export default function App(){
   const [account, setAccount] = useState<string | null>(null)
   const [provider, setProvider] = useState<any>(null)
   const [readProvider, setReadProvider] = useState<any>(null)
+  const [factoryOwner, setFactoryOwner] = useState<string>('')
 
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
@@ -167,6 +174,17 @@ export default function App(){
   }
 
   useEffect(()=>{ loadPools() }, [readProvider])
+  // 读取工厂拥有者，帮助管理员确认当前连接的钱包是否具备创建权限
+  useEffect(()=>{
+    (async ()=>{
+      if (!FACTORY_ADDRESS || !readProvider) return
+      try {
+        const f = new Contract(FACTORY_ADDRESS, FactoryArtifact.abi, readProvider)
+        const o = await (f as any).owner?.().catch(()=> '')
+        if (o) setFactoryOwner(String(o))
+      } catch {}
+    })()
+  }, [FACTORY_ADDRESS, readProvider])
 
   // 管理员删除并退款（分批）
   const [canceling, setCanceling] = useState<string | null>(null)
@@ -287,6 +305,18 @@ export default function App(){
   // 前端预校验，避免链上直接报 "bad fill" 不知原因
   if (min <= 0n) { setBusy(false); alert(`最小池子金额无效（解析后为 ${min} ）`); return }
   if (max <= min) { setBusy(false); alert(`最大池子金额必须大于最小金额。当前最小 ${min} 最大 ${max}`); return }
+      // 预检：静态调用 & Gas 估算（捕获权限或配置导致的回退）
+      try {
+        await (factory as any).createPool.staticCall({ minFill: min, maxFill: max, metadataURI, sortOrder })
+        // 可选 gas 估算 （有些钱包对 estimate 的 revert 信息更清晰）
+        await (factory as any).createPool.estimateGas({ minFill: min, maxFill: max, metadataURI, sortOrder }).catch(()=>{})
+      } catch (preErr: any) {
+        console.error('createPool preflight error', preErr)
+        const msg = preErr?.shortMessage || preErr?.message || String(preErr)
+        alert('预检失败，交易未发送：'+ msg)
+        setBusy(false)
+        return
+      }
       const tx = await factory.createPool({ minFill: min, maxFill: max, metadataURI, sortOrder })
       const receipt = await tx.wait()
       // 解析日志拿到新池地址
@@ -385,6 +415,11 @@ export default function App(){
           {PASS_HASH_ENV && <button style={{marginLeft:8}} onClick={logout}>退出登录</button>}
         </div>
       </header>
+      {factoryOwner && (
+        <div style={{margin:'4px 0 12px', fontSize:12, color:'#555'}}>
+          工厂拥有者：{factoryOwner} {account && factoryOwner.toLowerCase()===account.toLowerCase() ? '(当前已具备创建权限)' : (account ? '(当前账户无创建权限：仅 owner 可调用 createPool)' : '')}
+        </div>
+      )}
 
       <div className="card">
         <div className="row">
@@ -478,6 +513,7 @@ export default function App(){
       )}
 
       <IndexManager />
+      <MetaFixer />
       </>
       )}
     </div>
@@ -493,7 +529,10 @@ function IndexManager() {
   const [busy, setBusy] = useState(false)
   const backend = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000').trim()
   const apiKeyEnv = (import.meta.env.VITE_BACKEND_API_KEY || '').trim()
-  const getApiKey = () => localStorage.getItem('admin_key') || apiKeyEnv
+  const getApiKey = () => {
+    const k = (localStorage.getItem('admin_api_key') || apiKeyEnv || '').trim()
+    return /^[\x20-\x7E]*$/.test(k) ? k : ''
+  }
 
   const loadIndex = async () => {
     setLoading(true)
@@ -562,6 +601,77 @@ function IndexManager() {
             <button style={{marginLeft:8}} onClick={()=>remove(k)}>删除</button>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ====== 元数据与索引修复工具（针对早期写到局域网的 metadata） ======
+function MetaFixer(){
+  const backend = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000').trim()
+  const apiKeyEnv = (import.meta.env.VITE_BACKEND_API_KEY || '').trim()
+  const getApiKey = () => {
+    const k = (localStorage.getItem('admin_api_key') || apiKeyEnv || '').trim()
+    return /^[\x20-\x7E]*$/.test(k) ? k : ''
+  }
+  const [pool, setPool] = useState('')
+  const [title, setTitle] = useState('')
+  const [desc, setDesc] = useState('')
+  const [image, setImage] = useState<File|null>(null)
+  const [startTime, setStartTime] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const doRun = async () => {
+    if (!pool) return alert('请输入 Pool 地址')
+    if (!title || !desc) return alert('请填写标题与描述')
+    if (!image) return alert('请选择图片文件')
+    setBusy(true)
+    try {
+      // 1. 上传图片
+      const fd = new FormData()
+      fd.append('file', image)
+      const headers1: Record<string,string> = {}
+      { const k = getApiKey(); if (k) headers1['x-api-key'] = k }
+      const up = await fetch(`${backend}/api/upload`, { method:'POST', body: fd, headers: headers1 })
+      if (!up.ok) throw new Error('上传失败')
+      const upJ = await up.json()
+      const imageUrl = upJ.url as string
+      // 2. 生成元数据
+      const body: any = { title, description: desc, image: imageUrl }
+      if (startTime) body.startAt = Math.floor(new Date(startTime).getTime()/1000)
+      const headers2: Record<string,string> = { 'Content-Type':'application/json' }
+      { const k = getApiKey(); if (k) headers2['x-api-key'] = k }
+      const r = await fetch(`${backend}/api/metadata`, { method:'POST', headers: headers2, body: JSON.stringify(body) })
+      if (!r.ok) throw new Error('生成元数据失败')
+      const j = await r.json()
+      const uri = String(j.uri)
+      // 3. 写入索引
+      const headers3: Record<string,string> = { 'Content-Type':'application/json' }
+      { const k = getApiKey(); if (k) headers3['x-api-key'] = k }
+      const w = await fetch(`${backend}/api/meta/index`, { method:'POST', headers: headers3, body: JSON.stringify({ pool, uri }) })
+      if (!w.ok) throw new Error('写入索引失败')
+      alert('已生成并写入索引：\n'+ uri + '\n请前往用户前端刷新查看。')
+    } catch (e:any) { alert(e?.message || String(e)) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card" style={{marginTop:16}}>
+      <h3>元数据修复工具</h3>
+      <div style={{fontSize:12,color:'#666',marginBottom:8}}>用于修复早期写到局域网(192.168/localhost)导致的“无图片/无标题”。将图片与元数据直接写入当前后端，并更新指定 Pool 的索引。</div>
+      <div className="row">
+        <input style={{flex:1}} placeholder="Pool 地址" value={pool} onChange={e=>setPool(e.target.value.trim())} />
+      </div>
+      <div className="row" style={{marginTop:8}}>
+        <input style={{flex:1}} placeholder="标题" value={title} onChange={e=>setTitle(e.target.value)} />
+        <input style={{flex:1}} placeholder="描述" value={desc} onChange={e=>setDesc(e.target.value)} />
+      </div>
+      <div className="row" style={{marginTop:8}}>
+        <input type="datetime-local" value={startTime} onChange={e=>setStartTime(e.target.value)} />
+        <input type="file" accept="image/*" onChange={e=>setImage(e.target.files?.[0]||null)} />
+      </div>
+      <div style={{marginTop:10}}>
+        <button disabled={busy} onClick={doRun}>{busy ? '处理中...' : '生成并写入索引'}</button>
       </div>
     </div>
   )

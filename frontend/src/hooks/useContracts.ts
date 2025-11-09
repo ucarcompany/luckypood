@@ -72,7 +72,16 @@ export function usePools() {
   }
 
   const load = useCallback(async () => {
-    if (!provider || !factory) return
+    if (!FACTORY_ADDRESS) {
+      setPools([])
+      setError('缺少 VITE_FACTORY_ADDRESS（用户前端未配置工厂地址）')
+      return
+    }
+    if (!provider || !factory) {
+      setPools([])
+      setError('Provider 未就绪或工厂实例创建失败（请检查 DEFAULT_RPC 与工厂地址）')
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -107,7 +116,7 @@ export function usePools() {
       }
 
       // 1) read PoolCreated logs from Factory to get metadataURI & sortOrder（采用分段批量）
-      let metaByPool: Record<string,{metadataURI?:string, sortOrder?:number}> = {}
+  let metaByPool: Record<string,{metadataURI?:string, sortOrder?:number, indexURI?: string}> = {}
       try {
         const iface = new Interface(FactoryArtifact.abi)
         const eventFrag = iface.getEvent('PoolCreated')
@@ -131,15 +140,15 @@ export function usePools() {
       // 1.5) 后端索引兜底：尝试读取 BACKEND_URL/meta/index.json；若不存在则读 BACKEND_URL/api/meta/index
       if (BACKEND_URL) {
         try {
-          const r = await fetch(`${BACKEND_URL}/meta/index.json`)
+          const r = await fetch(`${BACKEND_URL}/meta/index.json?ts=${Date.now()}`)
           if (r.ok) {
             const j = await r.json().catch(()=>null) as Record<string,string> | null
             if (j) {
               for (const k of Object.keys(j)) {
                 const lower = k.toLowerCase()
                 const uri = rewriteToBackendOrigin(j[k])
-                if (!metaByPool[lower]) metaByPool[lower] = { metadataURI: uri, sortOrder: undefined }
-                else if (!metaByPool[lower].metadataURI) metaByPool[lower].metadataURI = uri
+                if (!metaByPool[lower]) metaByPool[lower] = { metadataURI: undefined, sortOrder: undefined, indexURI: uri }
+                else metaByPool[lower].indexURI = uri
               }
             }
           } else {
@@ -151,8 +160,8 @@ export function usePools() {
                 for (const k of Object.keys(j2)) {
                   const lower = k.toLowerCase()
                   const uri = rewriteToBackendOrigin((j2 as any)[k])
-                  if (!metaByPool[lower]) metaByPool[lower] = { metadataURI: uri, sortOrder: undefined }
-                  else if (!metaByPool[lower].metadataURI) metaByPool[lower].metadataURI = uri
+                  if (!metaByPool[lower]) metaByPool[lower] = { metadataURI: undefined, sortOrder: undefined, indexURI: uri }
+                  else metaByPool[lower].indexURI = uri
                 }
               }
             }
@@ -186,7 +195,7 @@ export function usePools() {
           }
         }
         const lower = addr.toLowerCase()
-        const extra = metaByPool[lower] || {}
+  const extra = metaByPool[lower] || {}
         const item: PoolInfo = {
           address: addr,
           stablecoin: info.stablecoin,
@@ -243,7 +252,16 @@ export function usePools() {
           }
           if (meta) metaSrc = 'factory_event'
         }
-        // 2. 后端索引 /meta/<addr>.json 兜底
+        // 1.1 若事件 URI 失败，则尝试索引中的 URI（indexURI）
+        if (!meta && extra && extra.indexURI) {
+          meta = await tryLoadMeta(extra.indexURI)
+          if (!meta) {
+            await new Promise(r=>setTimeout(r, 600))
+            meta = await tryLoadMeta(extra.indexURI, 2)
+          }
+          if (meta) metaSrc = 'backend_index'
+        }
+        // 2. 后端索引 /meta/<addr>.json 兜底（注意：如果后端未生成按地址命名的 JSON，此步可能 404）
         if (!meta && BACKEND_URL) {
           const lowerAddr = addr.toLowerCase()
           const uri = `${BACKEND_URL}/meta/${lowerAddr}.json`

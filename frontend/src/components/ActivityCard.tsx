@@ -57,7 +57,19 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
       return attempts[0]
     } catch { return undefined }
   }
-  const progress = Number(info.totalRaised * 100n / (info.maxFill === 0n ? 1n : info.maxFill))
+  // 进度：使用 decimals 换算成人类单位后再计算，避免因为整数 BigInt 截断导致 <1% 显示为 0%
+  const progressRaw = useMemo(() => {
+    if (info.maxFill === 0n) return 0
+    try {
+      // 将 BigInt 转成同一数量级：ratio = totalRaised / maxFill
+      // 为防止精度损失，把它们放大到 1e6 再除（只做显示，不影响链上逻辑）
+      const scale = 1_000_000n
+      const ratioScaled = (info.totalRaised * scale) / info.maxFill
+      const pct = Number(ratioScaled) / 10_000 // ratioScaled/1e6 *100 == /1e4
+      return pct
+    } catch { return 0 }
+  }, [info.totalRaised, info.maxFill])
+  const progress = isFinite(progressRaw) ? progressRaw : 0
 
   const remainingByUser = useMemo(() => Math.max(0, 10 - userTickets), [userTickets])
   const remainingByCap = useMemo(() => {
@@ -103,29 +115,29 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
   const [ticketRange, setTicketRange] = useState<{start:number,end:number} | null>(null)
 
   const participate = async () => {
-    if (!provider || !account) return alert('请先连接钱包')
+  if (!provider || !account) return alert(t('please_connect'))
     if (count < 1 || count > 10) return
-    if (count > remaining) { alert('超过可参与份额或已达上限'); return }
+  if (count > remaining) { alert(t('exceed_limit')); return }
     setTxBusy(true)
     try {
       const signer = await (provider as BrowserProvider).getSigner()
       const pool = new Contract(info.address, PoolArtifact.abi, signer)
       const erc20 = new Contract(info.stablecoin, ERC20_ABI, signer)
       const amount = BigInt(count) * info.ticketPrice
-      setStatus('正在授权...')
+  setStatus(t('status_approving'))
       const allowance: bigint = await erc20.allowance(account, info.address)
       if (allowance < amount) {
         const tx1 = await erc20.approve(info.address, amount)
         await tx1.wait()
       }
-      setStatus('正在参与...')
+  setStatus(t('status_participating'))
       const tx2 = await pool.participate(count)
       const receipt = await tx2.wait()
       // refresh user tickets
       const tickets: bigint = await pool.ticketsByUser(account)
       setUserTickets(Number(tickets))
-      setStatus('参与成功')
-      toast.show(<span>参与成功，查看交易：<a href={`https://testnet.bscscan.com/tx/${tx2.hash}`} target="_blank" rel="noreferrer">BscScan</a></span>, 'success')
+  setStatus(t('status_success'))
+  toast.show(<span>{t('participate_success')}，<a href={`https://testnet.bscscan.com/tx/${tx2.hash}`} target="_blank" rel="noreferrer">{t('view_on_bscscan')}</a></span>, 'success')
       postLog({ type:'participate', pool: info.address, txHash: tx2.hash, address: account, count })
       onRefresh?.()
     } catch (e: any) {
@@ -145,7 +157,7 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
       const pool = new Contract(info.address, PoolArtifact.abi, signer)
       const tx = await pool.claimRefund()
       await tx.wait()
-      toast.show(<span>退款成功，查看交易：<a href={`https://testnet.bscscan.com/tx/${tx.hash}`} target="_blank" rel="noreferrer">BscScan</a></span>, 'success')
+  toast.show(<span>{t('refund_success')}，<a href={`https://testnet.bscscan.com/tx/${tx.hash}`} target="_blank" rel="noreferrer">{t('view_on_bscscan')}</a></span>, 'success')
       postLog({ type:'refund', pool: info.address, txHash: tx.hash, address: account })
       onRefresh?.()
     } catch (e:any) {
@@ -180,7 +192,7 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
       const pool = new Contract(info.address, PoolArtifact.abi, signer)
       const tx = await pool.tryDrawIfReady()
       await tx.wait()
-      toast.show(<span>已提交开奖请求，查看交易：<a href={`https://testnet.bscscan.com/tx/${tx.hash}`} target="_blank" rel="noreferrer">BscScan</a></span>, 'success')
+  toast.show(<span>{t('draw_request_submitted')}：<a href={`https://testnet.bscscan.com/tx/${tx.hash}`} target="_blank" rel="noreferrer">{t('view_on_bscscan')}</a></span>, 'success')
       postLog({ type:'tryDraw', pool: info.address, txHash: tx.hash, address: account || undefined })
       onRefresh?.()
     } catch (e:any) {
@@ -277,7 +289,7 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
             }}
           />
         ) : (
-          <div className="thumb placeholder">无图片</div>
+          <div className="thumb placeholder">{t('noImage')}</div>
         )}
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8}}>
@@ -292,7 +304,7 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
           </div>
         </div>
       </div>
-      <div style={{marginTop:10,color:'#334155',fontSize:14}}>池子进度：{progress}%</div>
+  <div style={{marginTop:10,color:'#334155',fontSize:14}}>{t('progress')}: {progress.toFixed(2)}%</div>
       <div className="progress" style={{marginTop:6}}>
         <div style={{width:`${Math.min(progress,100)}%`, ['--w' as any]:`${Math.min(progress,100)}%`}} />
       </div>
@@ -334,7 +346,7 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
         </div>
       )}
       <div className="actions" style={{marginTop:12}}>
-        <label>{t('count')}：</label>
+  <label>{t('count')}：</label>
         <input type="number" min={1} max={Math.max(1, remaining)} value={count} onChange={e => setCount(Math.min(Math.max(1, Number(e.target.value)||1), Math.max(1, remaining)))} style={{width:90}} />
   <button className="btn-primary" disabled={!account || txBusy || remaining===0 || notStarted} onClick={participate}>{t('participate')}</button>
         <button disabled={!canRefund || txBusy} onClick={refund}>{t('refund')}</button>
@@ -342,7 +354,7 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
       </div>
       {status && <div style={{marginTop:8, fontSize:12, color:'#444'}}>{status}</div>}
       {ticketRange && (
-        <div style={{marginTop:6, fontSize:12, color:'#555'}}>你的当前票号范围：{ticketRange.start} - {ticketRange.end}</div>
+  <div style={{marginTop:6, fontSize:12, color:'#555'}}>{t('your_ticket_range')}：{ticketRange.start} - {ticketRange.end}</div>
       )}
       {info.winner && info.winner !== '0x0000000000000000000000000000000000000000' && (
         <div style={{marginTop:8}}>{t('winner')}：{info.winner.slice(0,6)}...{info.winner.slice(-4)}</div>
