@@ -1,0 +1,33 @@
+{
+  "name": "lucky-pool-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "truffle compile",
+    "test": "truffle test",
+    "migrate:dev": "truffle migrate --network development",
+    "migrate:testnet": "truffle migrate --network bscTestnet",
+    "migrate:mainnet": "truffle migrate --network bsc",
+    "export-abi": "node scripts/export-abi.js",
+    "vrf:create": "hardhat run --network bscTestnet scripts/vrf-create.js",
+    "vrf:fund": "hardhat run --network bscTestnet scripts/vrf-fund.js",
+    "vrf:add-consumer": "hardhat run --network bscTestnet scripts/vrf-add-consumer.js",
+    "vrf:add-all-pools": "hardhat run --network bscTestnet scripts/vrf-add-all-pools.js",
+    "vrf:check": "hardhat run --network bscTestnet scripts/vrf-check.js"
+    ,"link:balance": "hardhat run --network bscTestnet scripts/link-balance.js",
+    "pool:participants": "node scripts/pool-participants.js",
+    "pool:refund": "node scripts/refund-multisend.js"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@truffle/hdwallet-provider": "^2.1.14",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.8",
+    "truffle": "^5.11.5"
+  },
+  "dependencies": {
+    "@chainlink/contracts": "^0.8.0",
+    "@openzeppelin/contracts": "^4.9.6",
+    "ethers": "^6.15.0"
+  }
+}

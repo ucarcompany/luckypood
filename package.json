@@ -1,0 +1,17 @@
+{
+  "name": "lucky-pool-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "contracts",
+    "frontend",
+    "admin",
+    "backend",
+    "shared"
+  ],
+  "scripts": {
+    "postinstall": "echo Monorepo dependencies installed",
+    "build": "npm -w contracts run build && npm -w frontend run build && npm -w admin run build && npm -w backend run build",
+    "test": "npm -w contracts test"
+  }
+}

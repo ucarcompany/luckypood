@@ -1,0 +1,91 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "ILuckyPool",
+  "sourceName": "contracts/interfaces/ILuckyPool.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "getInfo",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "address",
+              "name": "stablecoin",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "ticketPrice",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "minFill",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "maxFill",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint64",
+              "name": "createdAt",
+              "type": "uint64"
+            },
+            {
+              "internalType": "uint64",
+              "name": "countdownSeconds",
+              "type": "uint64"
+            },
+            {
+              "internalType": "uint64",
+              "name": "refundDeadlineSeconds",
+              "type": "uint64"
+            },
+            {
+              "internalType": "bool",
+              "name": "minReached",
+              "type": "bool"
+            },
+            {
+              "internalType": "bool",
+              "name": "drawn",
+              "type": "bool"
+            },
+            {
+              "internalType": "uint32",
+              "name": "totalTickets",
+              "type": "uint32"
+            },
+            {
+              "internalType": "uint256",
+              "name": "totalRaised",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint64",
+              "name": "countdownStartAt",
+              "type": "uint64"
+            },
+            {
+              "internalType": "address",
+              "name": "winner",
+              "type": "address"
+            }
+          ],
+          "internalType": "struct ILuckyPool.PoolInfo",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

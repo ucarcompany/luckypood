@@ -1,0 +1,620 @@
+{
+  "contractName": "ILuckyPool",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "getInfo",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "address",
+              "name": "stablecoin",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "ticketPrice",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "minFill",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "maxFill",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint64",
+              "name": "createdAt",
+              "type": "uint64"
+            },
+            {
+              "internalType": "uint64",
+              "name": "countdownSeconds",
+              "type": "uint64"
+            },
+            {
+              "internalType": "uint64",
+              "name": "refundDeadlineSeconds",
+              "type": "uint64"
+            },
+            {
+              "internalType": "bool",
+              "name": "minReached",
+              "type": "bool"
+            },
+            {
+              "internalType": "bool",
+              "name": "drawn",
+              "type": "bool"
+            },
+            {
+              "internalType": "bool",
+              "name": "cancelled",
+              "type": "bool"
+            },
+            {
+              "internalType": "uint32",
+              "name": "totalTickets",
+              "type": "uint32"
+            },
+            {
+              "internalType": "uint256",
+              "name": "totalRaised",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint64",
+              "name": "countdownStartAt",
+              "type": "uint64"
+            },
+            {
+              "internalType": "address",
+              "name": "winner",
+              "type": "address"
+            }
+          ],
+          "internalType": "struct ILuckyPool.PoolInfo",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "metadata": "{\"compiler\":{\"version\":\"0.8.20+commit.a1b79de6\"},\"language\":\"Solidity\",\"output\":{\"abi\":[{\"inputs\":[],\"name\":\"getInfo\",\"outputs\":[{\"components\":[{\"internalType\":\"address\",\"name\":\"stablecoin\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"ticketPrice\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"minFill\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"maxFill\",\"type\":\"uint256\"},{\"internalType\":\"uint64\",\"name\":\"createdAt\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"countdownSeconds\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"refundDeadlineSeconds\",\"type\":\"uint64\"},{\"internalType\":\"bool\",\"name\":\"minReached\",\"type\":\"bool\"},{\"internalType\":\"bool\",\"name\":\"drawn\",\"type\":\"bool\"},{\"internalType\":\"bool\",\"name\":\"cancelled\",\"type\":\"bool\"},{\"internalType\":\"uint32\",\"name\":\"totalTickets\",\"type\":\"uint32\"},{\"internalType\":\"uint256\",\"name\":\"totalRaised\",\"type\":\"uint256\"},{\"internalType\":\"uint64\",\"name\":\"countdownStartAt\",\"type\":\"uint64\"},{\"internalType\":\"address\",\"name\":\"winner\",\"type\":\"address\"}],\"internalType\":\"struct ILuckyPool.PoolInfo\",\"name\":\"\",\"type\":\"tuple\"}],\"stateMutability\":\"view\",\"type\":\"function\"}],\"devdoc\":{\"kind\":\"dev\",\"methods\":{},\"version\":1},\"userdoc\":{\"kind\":\"user\",\"methods\":{},\"version\":1}},\"settings\":{\"compilationTarget\":{\"project:/contracts/interfaces/ILuckyPool.sol\":\"ILuckyPool\"},\"evmVersion\":\"shanghai\",\"libraries\":{},\"metadata\":{\"bytecodeHash\":\"ipfs\"},\"optimizer\":{\"enabled\":true,\"runs\":200},\"remappings\":[]},\"sources\":{\"project:/contracts/interfaces/ILuckyPool.sol\":{\"keccak256\":\"0x23fd63f6721d220c36f04f8275bb0f141a453347b34e19fde855f1a90ca6c11d\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://e6cb057c15d7747f1fcfdee2e6c7d5bf0ab6a574a89e2736beada1af195baa77\",\"dweb:/ipfs/QmfM4cpH4H6brFSpJrfqZoRXUfvV8mtTytcH33utQ9muN8\"]}},\"version\":1}",
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "immutableReferences": {},
+  "generatedSources": [],
+  "deployedGeneratedSources": [],
+  "sourceMap": "",
+  "deployedSourceMap": "",
+  "source": "// SPDX-License-Identifier: MIT\r\npragma solidity ^0.8.20;\r\n\r\ninterface ILuckyPool {\r\n    struct PoolInfo {\r\n        address stablecoin;\r\n        uint256 ticketPrice;\r\n        uint256 minFill;\r\n        uint256 maxFill;\r\n        uint64 createdAt;\r\n        uint64 countdownSeconds;\r\n        uint64 refundDeadlineSeconds;\r\n        bool minReached;\r\n        bool drawn;\r\n        bool cancelled;\r\n        uint32 totalTickets;\r\n        uint256 totalRaised;\r\n        uint64 countdownStartAt;\r\n        address winner;\r\n    }\r\n\r\n    function getInfo() external view returns (PoolInfo memory);\r\n}\r\n",
+  "sourcePath": "E:\\Lucky-pool\\contracts\\contracts\\interfaces\\ILuckyPool.sol",
+  "ast": {
+    "absolutePath": "project:/contracts/interfaces/ILuckyPool.sol",
+    "exportedSymbols": {
+      "ILuckyPool": [
+        2640
+      ]
+    },
+    "id": 2641,
+    "license": "MIT",
+    "nodeType": "SourceUnit",
+    "nodes": [
+      {
+        "id": 2604,
+        "literals": [
+          "solidity",
+          "^",
+          "0.8",
+          ".20"
+        ],
+        "nodeType": "PragmaDirective",
+        "src": "33:24:13"
+      },
+      {
+        "abstract": false,
+        "baseContracts": [],
+        "canonicalName": "ILuckyPool",
+        "contractDependencies": [],
+        "contractKind": "interface",
+        "fullyImplemented": false,
+        "id": 2640,
+        "linearizedBaseContracts": [
+          2640
+        ],
+        "name": "ILuckyPool",
+        "nameLocation": "71:10:13",
+        "nodeType": "ContractDefinition",
+        "nodes": [
+          {
+            "canonicalName": "ILuckyPool.PoolInfo",
+            "id": 2633,
+            "members": [
+              {
+                "constant": false,
+                "id": 2606,
+                "mutability": "mutable",
+                "name": "stablecoin",
+                "nameLocation": "124:10:13",
+                "nodeType": "VariableDeclaration",
+                "scope": 2633,
+                "src": "116:18:13",
+                "stateVariable": false,
+                "storageLocation": "default",
+                "typeDescriptions": {
+                  "typeIdentifier": "t_address",
+                  "typeString": "address"
+                },
+                "typeName": {
+                  "id": 2605,
+                  "name": "address",
+                  "nodeType": "ElementaryTypeName",
+                  "src": "116:7:13",
+                  "stateMutability": "nonpayable",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_address",
+                    "typeString": "address"
+                  }
+                },
+                "visibility": "internal"
+              },
+              {
+                "constant": false,
+                "id": 2608,
+                "mutability": "mutable",
+                "name": "ticketPrice",
+                "nameLocation": "153:11:13",
+                "nodeType": "VariableDeclaration",
+                "scope": 2633,
+                "src": "145:19:13",
+                "stateVariable": false,
+                "storageLocation": "default",
+                "typeDescriptions": {
+                  "typeIdentifier": "t_uint256",
+                  "typeString": "uint256"
+                },
+                "typeName": {
+                  "id": 2607,
+                  "name": "uint256",
+                  "nodeType": "ElementaryTypeName",
+                  "src": "145:7:13",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_uint256",
+                    "typeString": "uint256"
+                  }
+                },
+                "visibility": "internal"
+              },
+              {
+                "constant": false,
+                "id": 2610,
+                "mutability": "mutable",
+                "name": "minFill",
+                "nameLocation": "183:7:13",
+                "nodeType": "VariableDeclaration",
+                "scope": 2633,
+                "src": "175:15:13",
+                "stateVariable": false,
+                "storageLocation": "default",
+                "typeDescriptions": {
+                  "typeIdentifier": "t_uint256",
+                  "typeString": "uint256"
+                },
+                "typeName": {
+                  "id": 2609,
+                  "name": "uint256",
+                  "nodeType": "ElementaryTypeName",
+                  "src": "175:7:13",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_uint256",
+                    "typeString": "uint256"
+                  }
+                },
+                "visibility": "internal"
+              },
+              {
+                "constant": false,
+                "id": 2612,
+                "mutability": "mutable",
+                "name": "maxFill",
+                "nameLocation": "209:7:13",
+                "nodeType": "VariableDeclaration",
+                "scope": 2633,
+                "src": "201:15:13",
+                "stateVariable": false,
+                "storageLocation": "default",
+                "typeDescriptions": {
+                  "typeIdentifier": "t_uint256",
+                  "typeString": "uint256"
+                },
+                "typeName": {
+                  "id": 2611,
+                  "name": "uint256",
+                  "nodeType": "ElementaryTypeName",
+                  "src": "201:7:13",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_uint256",
+                    "typeString": "uint256"
+                  }
+                },
+                "visibility": "internal"
+              },
+              {
+                "constant": false,
+                "id": 2614,
+                "mutability": "mutable",
+                "name": "createdAt",
+                "nameLocation": "234:9:13",
+                "nodeType": "VariableDeclaration",
+                "scope": 2633,
+                "src": "227:16:13",
+                "stateVariable": false,
+                "storageLocation": "default",
+                "typeDescriptions": {
+                  "typeIdentifier": "t_uint64",
+                  "typeString": "uint64"
+                },
+                "typeName": {
+                  "id": 2613,
+                  "name": "uint64",
+                  "nodeType": "ElementaryTypeName",
+                  "src": "227:6:13",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_uint64",
+                    "typeString": "uint64"
+                  }
+                },
+                "visibility": "internal"
+              },
+              {
+                "constant": false,
+                "id": 2616,
+                "mutability": "mutable",
+                "name": "countdownSeconds",
+                "nameLocation": "261:16:13",
+                "nodeType": "VariableDeclaration",
+                "scope": 2633,
+                "src": "254:23:13",
+                "stateVariable": false,
+                "storageLocation": "default",
+                "typeDescriptions": {
+                  "typeIdentifier": "t_uint64",
+                  "typeString": "uint64"
+                },
+                "typeName": {
+                  "id": 2615,
+                  "name": "uint64",
+                  "nodeType": "ElementaryTypeName",
+                  "src": "254:6:13",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_uint64",
+                    "typeString": "uint64"
+                  }
+                },
+                "visibility": "internal"
+              },
+              {
+                "constant": false,
+                "id": 2618,
+                "mutability": "mutable",
+                "name": "refundDeadlineSeconds",
+                "nameLocation": "295:21:13",
+                "nodeType": "VariableDeclaration",
+                "scope": 2633,
+                "src": "288:28:13",
+                "stateVariable": false,
+                "storageLocation": "default",
+                "typeDescriptions": {
+                  "typeIdentifier": "t_uint64",
+                  "typeString": "uint64"
+                },
+                "typeName": {
+                  "id": 2617,
+                  "name": "uint64",
+                  "nodeType": "ElementaryTypeName",
+                  "src": "288:6:13",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_uint64",
+                    "typeString": "uint64"
+                  }
+                },
+                "visibility": "internal"
+              },
+              {
+                "constant": false,
+                "id": 2620,
+                "mutability": "mutable",
+                "name": "minReached",
+                "nameLocation": "332:10:13",
+                "nodeType": "VariableDeclaration",
+                "scope": 2633,
+                "src": "327:15:13",
+                "stateVariable": false,
+                "storageLocation": "default",
+                "typeDescriptions": {
+                  "typeIdentifier": "t_bool",
+                  "typeString": "bool"
+                },
+                "typeName": {
+                  "id": 2619,
+                  "name": "bool",
+                  "nodeType": "ElementaryTypeName",
+                  "src": "327:4:13",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_bool",
+                    "typeString": "bool"
+                  }
+                },
+                "visibility": "internal"
+              },
+              {
+                "constant": false,
+                "id": 2622,
+                "mutability": "mutable",
+                "name": "drawn",
+                "nameLocation": "358:5:13",
+                "nodeType": "VariableDeclaration",
+                "scope": 2633,
+                "src": "353:10:13",
+                "stateVariable": false,
+                "storageLocation": "default",
+                "typeDescriptions": {
+                  "typeIdentifier": "t_bool",
+                  "typeString": "bool"
+                },
+                "typeName": {
+                  "id": 2621,
+                  "name": "bool",
+                  "nodeType": "ElementaryTypeName",
+                  "src": "353:4:13",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_bool",
+                    "typeString": "bool"
+                  }
+                },
+                "visibility": "internal"
+              },
+              {
+                "constant": false,
+                "id": 2624,
+                "mutability": "mutable",
+                "name": "cancelled",
+                "nameLocation": "379:9:13",
+                "nodeType": "VariableDeclaration",
+                "scope": 2633,
+                "src": "374:14:13",
+                "stateVariable": false,
+                "storageLocation": "default",
+                "typeDescriptions": {
+                  "typeIdentifier": "t_bool",
+                  "typeString": "bool"
+                },
+                "typeName": {
+                  "id": 2623,
+                  "name": "bool",
+                  "nodeType": "ElementaryTypeName",
+                  "src": "374:4:13",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_bool",
+                    "typeString": "bool"
+                  }
+                },
+                "visibility": "internal"
+              },
+              {
+                "constant": false,
+                "id": 2626,
+                "mutability": "mutable",
+                "name": "totalTickets",
+                "nameLocation": "406:12:13",
+                "nodeType": "VariableDeclaration",
+                "scope": 2633,
+                "src": "399:19:13",
+                "stateVariable": false,
+                "storageLocation": "default",
+                "typeDescriptions": {
+                  "typeIdentifier": "t_uint32",
+                  "typeString": "uint32"
+                },
+                "typeName": {
+                  "id": 2625,
+                  "name": "uint32",
+                  "nodeType": "ElementaryTypeName",
+                  "src": "399:6:13",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_uint32",
+                    "typeString": "uint32"
+                  }
+                },
+                "visibility": "internal"
+              },
+              {
+                "constant": false,
+                "id": 2628,
+                "mutability": "mutable",
+                "name": "totalRaised",
+                "nameLocation": "437:11:13",
+                "nodeType": "VariableDeclaration",
+                "scope": 2633,
+                "src": "429:19:13",
+                "stateVariable": false,
+                "storageLocation": "default",
+                "typeDescriptions": {
+                  "typeIdentifier": "t_uint256",
+                  "typeString": "uint256"
+                },
+                "typeName": {
+                  "id": 2627,
+                  "name": "uint256",
+                  "nodeType": "ElementaryTypeName",
+                  "src": "429:7:13",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_uint256",
+                    "typeString": "uint256"
+                  }
+                },
+                "visibility": "internal"
+              },
+              {
+                "constant": false,
+                "id": 2630,
+                "mutability": "mutable",
+                "name": "countdownStartAt",
+                "nameLocation": "466:16:13",
+                "nodeType": "VariableDeclaration",
+                "scope": 2633,
+                "src": "459:23:13",
+                "stateVariable": false,
+                "storageLocation": "default",
+                "typeDescriptions": {
+                  "typeIdentifier": "t_uint64",
+                  "typeString": "uint64"
+                },
+                "typeName": {
+                  "id": 2629,
+                  "name": "uint64",
+                  "nodeType": "ElementaryTypeName",
+                  "src": "459:6:13",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_uint64",
+                    "typeString": "uint64"
+                  }
+                },
+                "visibility": "internal"
+              },
+              {
+                "constant": false,
+                "id": 2632,
+                "mutability": "mutable",
+                "name": "winner",
+                "nameLocation": "501:6:13",
+                "nodeType": "VariableDeclaration",
+                "scope": 2633,
+                "src": "493:14:13",
+                "stateVariable": false,
+                "storageLocation": "default",
+                "typeDescriptions": {
+                  "typeIdentifier": "t_address",
+                  "typeString": "address"
+                },
+                "typeName": {
+                  "id": 2631,
+                  "name": "address",
+                  "nodeType": "ElementaryTypeName",
+                  "src": "493:7:13",
+                  "stateMutability": "nonpayable",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_address",
+                    "typeString": "address"
+                  }
+                },
+                "visibility": "internal"
+              }
+            ],
+            "name": "PoolInfo",
+            "nameLocation": "96:8:13",
+            "nodeType": "StructDefinition",
+            "scope": 2640,
+            "src": "89:426:13",
+            "visibility": "public"
+          },
+          {
+            "functionSelector": "5a9b0b89",
+            "id": 2639,
+            "implemented": false,
+            "kind": "function",
+            "modifiers": [],
+            "name": "getInfo",
+            "nameLocation": "532:7:13",
+            "nodeType": "FunctionDefinition",
+            "parameters": {
+              "id": 2634,
+              "nodeType": "ParameterList",
+              "parameters": [],
+              "src": "539:2:13"
+            },
+            "returnParameters": {
+              "id": 2638,
+              "nodeType": "ParameterList",
+              "parameters": [
+                {
+                  "constant": false,
+                  "id": 2637,
+                  "mutability": "mutable",
+                  "name": "",
+                  "nameLocation": "-1:-1:-1",
+                  "nodeType": "VariableDeclaration",
+                  "scope": 2639,
+                  "src": "565:15:13",
+                  "stateVariable": false,
+                  "storageLocation": "memory",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_struct$_PoolInfo_$2633_memory_ptr",
+                    "typeString": "struct ILuckyPool.PoolInfo"
+                  },
+                  "typeName": {
+                    "id": 2636,
+                    "nodeType": "UserDefinedTypeName",
+                    "pathNode": {
+                      "id": 2635,
+                      "name": "PoolInfo",
+                      "nameLocations": [
+                        "565:8:13"
+                      ],
+                      "nodeType": "IdentifierPath",
+                      "referencedDeclaration": 2633,
+                      "src": "565:8:13"
+                    },
+                    "referencedDeclaration": 2633,
+                    "src": "565:8:13",
+                    "typeDescriptions": {
+                      "typeIdentifier": "t_struct$_PoolInfo_$2633_storage_ptr",
+                      "typeString": "struct ILuckyPool.PoolInfo"
+                    }
+                  },
+                  "visibility": "internal"
+                }
+              ],
+              "src": "564:17:13"
+            },
+            "scope": 2640,
+            "src": "523:59:13",
+            "stateMutability": "view",
+            "virtual": false,
+            "visibility": "external"
+          }
+        ],
+        "scope": 2641,
+        "src": "61:524:13",
+        "usedErrors": [],
+        "usedEvents": []
+      }
+    ],
+    "src": "33:554:13"
+  },
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.20+commit.a1b79de6.Emscripten.clang"
+  },
+  "networks": {},
+  "schemaVersion": "3.4.16",
+  "updatedAt": "2025-11-08T18:10:31.396Z",
+  "devdoc": {
+    "kind": "dev",
+    "methods": {},
+    "version": 1
+  },
+  "userdoc": {
+    "kind": "user",
+    "methods": {},
+    "version": 1
+  }
+}
