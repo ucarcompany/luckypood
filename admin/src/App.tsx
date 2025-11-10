@@ -407,10 +407,39 @@ export default function App(){
       if (addrs.length === 0) { alert('未找到任何池地址'); return }
       const headers: Record<string,string> = { 'Content-Type': 'application/json' }
       { const dynKey = getApiKey(); if (dynKey) headers['x-api-key'] = dynKey }
+      // 先读取后端 index，尽可能拿到已有的 uri
+      const uriMap: Record<string,string> = {}
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/meta/index`)
+        if (r.ok) {
+          const j = await r.json().catch(()=>null) as Record<string,string>|null
+          if (j) { for (const k of Object.keys(j)) uriMap[k.toLowerCase()] = j[k] }
+        }
+      } catch {}
+      // 对于 index 中缺失的池，回退读取链上 PoolCreated 日志获取 metadataURI
+      try {
+        if (readProvider) {
+          const iface = new Interface(FactoryArtifact.abi as any)
+          const ev = iface.getEvent('PoolCreated')
+          const topic0 = (ev as any).topicHash || (iface as any).getEventTopic?.('PoolCreated')
+          const logs = await getLogsBatched(readProvider, { address: FACTORY_ADDRESS, topics: [topic0] }, { fromBlock: FACTORY_DEPLOY_BLOCK })
+          for (const l of logs) {
+            try {
+              const parsed: any = iface.parseLog({ topics: l.topics, data: l.data })
+              const p = String(parsed?.args?.[0] || '').toLowerCase()
+              const uri = String(parsed?.args?.[3] || '')
+              if (p && uri && !uriMap[p]) uriMap[p] = uri
+            } catch {}
+          }
+        }
+      } catch {}
       let ok = 0, fail = 0
       for (const addr of addrs) {
+        const lower = addr.toLowerCase()
+        const payload: any = { pool: addr }
+        if (uriMap[lower]) payload.uri = uriMap[lower]
         try {
-          const r = await fetch(`${BACKEND_URL}/api/meta/alias`, { method:'POST', headers, body: JSON.stringify({ pool: addr }) })
+          const r = await fetch(`${BACKEND_URL}/api/meta/alias`, { method:'POST', headers, body: JSON.stringify(payload) })
           if (r.ok) ok++; else fail++
         } catch { fail++ }
       }
