@@ -123,38 +123,13 @@ export default function App() {
             const dappUrl = (PUBLIC_URL && PUBLIC_URL.length>0) ? PUBLIC_URL : (window?.location?.origin || '')
             const mm = `https://metamask.app.link/dapp/${dappUrl.replace(/^https?:\/\//,'')}`
             const okx = `okx://wallet/dapp?url=${encodeURIComponent(dappUrl)}`
-
-            const openInBinance = () => {
-              const url = dappUrl
-              const candidates = [
-                // 优先使用币安的通用链接（可通过系统浏览器唤起 App）
-                `https://app.binance.com/en/wallet/dapp?url=${encodeURIComponent(url)}`,
-                `https://www.binance.com/en/wallet/dapp?url=${encodeURIComponent(url)}`,
-                // 兜底私有协议（部分安卓机型支持）
-                `bnc://app/dapp?url=${encodeURIComponent(url)}`,
-                `binance://app/dapp?url=${encodeURIComponent(url)}`
-              ]
-              let i = 0
-              const tryOpen = () => {
-                if (i >= candidates.length) return
-                const link = candidates[i++]
-                // 使用 window.location 以保证由用户手势触发
-                window.location.href = link
-                // 若未唤起，则 1.2s 后尝试下一种方案
-                setTimeout(() => {
-                  // 页面若被置于后台，visibilityState 会变为 hidden，此时不再继续降级
-                  if (document.visibilityState === 'hidden') return
-                  tryOpen()
-                }, 1200)
-              }
-              tryOpen()
-            }
-
+            // 简化：只负责唤起币安 App
+            const binanceApp = 'binance://'
             return (
               <>
                 <a href={mm} target="_blank" rel="noreferrer"><button>{t('open_metamask')}</button></a>
                 <a href={okx}><button>{t('open_okx')}</button></a>
-                <button onClick={openInBinance}>{t('open_binance')}</button>
+                <a href={binanceApp}><button>{t('open_binance')}</button></a>
               </>
             )
           })()}
