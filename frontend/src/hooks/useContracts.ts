@@ -168,7 +168,7 @@ export function usePools() {
       return
     }
     const readProv: JsonRpcProvider | BrowserProvider | null = readProvider || walletProvider
-    const factory = (readProv && FACTORY_ADDRESS) ? new Contract(FACTORY_ADDRESS, FactoryArtifact.abi, readProv) : null
+  const factory = (readProv && FACTORY_ADDRESS) ? new Contract(FACTORY_ADDRESS, FactoryArtifact.abi, readProv) : null
     if (!readProv || !factory) {
       // 不再直接抛出“Provider 未就绪”错误，避免首次渲染时闪现；改为轻量重试。
       if (!opts?.silent) {
@@ -186,6 +186,46 @@ export function usePools() {
     loadingRef.current = true
     if (!opts?.silent) { setLoading(true); setError(null); setErrorKind(null) } else { setRefreshing(true) }
     try {
+      // 优先走后端聚合接口：当 BACKEND_URL 存在且后端提供 /api/pools 时，可极大减少前端 RPC 调用
+      if (BACKEND_URL) {
+        try {
+          const agg = await fetch(`${BACKEND_URL}/api/pools`, { cache: 'no-store' })
+          if (agg.ok) {
+            const j = await agg.json()
+            if (j && Array.isArray(j.items)) {
+              const mapped: PoolInfo[] = (j.items as any[]).map((x:any) => ({
+                address: x.address,
+                stablecoin: x.stablecoin,
+                ticketPrice: BigInt(x.ticketPrice),
+                minFill: BigInt(x.minFill),
+                maxFill: BigInt(x.maxFill),
+                createdAt: Number(x.createdAt),
+                countdownSeconds: Number(x.countdownSeconds),
+                refundDeadlineSeconds: Number(x.refundDeadlineSeconds),
+                minReached: !!x.minReached,
+                drawn: !!x.drawn,
+                cancelled: !!x.cancelled,
+                totalTickets: Number(x.totalTickets),
+                totalRaised: BigInt(x.totalRaised),
+                countdownStartAt: Number(x.countdownStartAt),
+                winner: x.winner,
+                metadataURI: x.metadataURI,
+                sortOrder: x.sortOrder,
+                meta: x.meta || undefined
+              }))
+              const active = mapped.filter(p => !p.cancelled && !HIDDEN_POOLS.includes(p.address.toLowerCase()))
+              active.sort((a,b)=> (a.sortOrder ?? 1e9) - (b.sortOrder ?? 1e9))
+              setTotalPools(mapped.length)
+              setCancelledCount(mapped.filter(p=>p.cancelled).length)
+              setHiddenCount(mapped.filter(p=>HIDDEN_POOLS.includes(p.address.toLowerCase())).length)
+              setPools(active)
+              if (error) { setError(null); setErrorKind(null) }
+              return
+            }
+          }
+        } catch {/* ignore and fallback to direct chain */}
+      }
+
       const poolAddrs: string[] = await factory.getPools()
       setTotalPools(poolAddrs.length)
       // ===== 工具：分段批量读取日志，规避 BSC -32005 limit exceeded =====
