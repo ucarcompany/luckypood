@@ -8,10 +8,21 @@ import path from 'path';
 import fs from 'fs';
 import http from 'http';
 import https from 'https';
+import { Contract } from 'ethers';
+import { JsonRpcProvider } from '@ethersproject/providers';
+import { Interface } from '@ethersproject/abi';
+import FactoryArtifact from './abi/LuckyPoolFactory.json';
+import PoolArtifact from './abi/LuckyPool.json';
 
 // Basic configuration via env vars
 const PORT = parseInt(process.env.PORT || '4000', 10);
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`; // For building returned URLs
+// Optional on-chain aggregation config
+const FACTORY_ADDRESS = process.env.FACTORY_ADDRESS || '';
+// Comma separated RPC endpoints (first valid fastest will be used)
+const RPC_ENDPOINTS = (process.env.RPC_ENDPOINTS || '').split(',').map(s => s.trim()).filter(Boolean);
+// Factory deploy block to limit log scan
+const FACTORY_DEPLOY_BLOCK = parseInt(process.env.FACTORY_DEPLOY_BLOCK || '0', 10) || 0;
 const HTTPS_PORT = process.env.HTTPS_PORT ? parseInt(process.env.HTTPS_PORT, 10) : undefined;
 const SSL_KEY_PATH = process.env.SSL_KEY_PATH || '';
 const SSL_CERT_PATH = process.env.SSL_CERT_PATH || '';
@@ -96,6 +107,7 @@ app.get('/', (_req, res) => {
       <li>上传接口（POST）：<code>/api/upload</code>（form-data: file=image）</li>
       <li>元数据接口（POST）：<code>/api/metadata</code>（JSON: { title, description, image }）</li>
       <li>静态文件：<a href="/uploads/">/uploads/</a>、<a href="/meta/">/meta/</a></li>
+      <li>聚合池信息：<code>/api/pools</code>（可选：使用环境变量 FACTORY_ADDRESS + RPC_ENDPOINTS）</li>
     </ul>
   </body>
   </html>`;
@@ -304,6 +316,170 @@ app.post('/api/log', requireApiKey, async (req, res) => {
     return res.status(500).json({ error: 'internal_error' })
   }
 })
+
+// Utility: pick a healthy RPC (latency + block height) once per request to avoid stale provider
+async function pickRpc(): Promise<JsonRpcProvider | null> {
+  const endpoints = RPC_ENDPOINTS.length > 0 ? RPC_ENDPOINTS : [
+    'https://data-seed-prebsc-2-s1.binance.org:8545',
+    'https://data-seed-prebsc-1-s2.binance.org:8545'
+  ];
+  const results: Array<{ url:string; latency:number; block:number; provider: JsonRpcProvider }> = [];
+  await Promise.all(endpoints.map(async url => {
+    try {
+      const prov = new JsonRpcProvider(url);
+      const t0 = Date.now();
+      const block = await prov.getBlockNumber();
+      const latency = Date.now() - t0;
+      results.push({ url, latency, block, provider: prov });
+    } catch {/* ignore */}
+  }));
+  if (!results.length) return null;
+  const maxBlock = results.reduce((m,r)=> r.block>m? r.block : m, 0);
+  const filtered = results.filter(r => (maxBlock - r.block) <= 2);
+  filtered.sort((a,b)=> a.latency - b.latency);
+  return (filtered[0] || results[0]).provider;
+}
+
+// GET /api/pools => aggregate on-chain pool info + metadata (index + per-pool metadata)
+// This reduces front-end RPC round trips dramatically for mobile usage.
+app.get('/api/pools', async (req, res) => {
+  if (!FACTORY_ADDRESS) return res.status(400).json({ error: 'factory_not_configured' });
+  try {
+    const provider = await pickRpc();
+    if (!provider) return res.status(502).json({ error: 'rpc_unavailable' });
+    const factory = new Contract(FACTORY_ADDRESS, FactoryArtifact.abi, provider);
+    // PoolCreated event scanning (limited by FACTORY_DEPLOY_BLOCK to reduce block range)
+    const iface = new Interface(FactoryArtifact.abi);
+    const eventFrag = iface.getEvent('PoolCreated');
+    const topic0 = (eventFrag as any).topicHash || (eventFrag as any).topic || (iface as any).getEventTopic?.('PoolCreated');
+    // batched log fetch
+    const latest = await provider.getBlockNumber();
+    let start = FACTORY_DEPLOY_BLOCK > 0 ? FACTORY_DEPLOY_BLOCK : 0;
+    const stepInit = 50_000;
+    let step = stepInit;
+    const logs: any[] = [];
+    while (start <= latest) {
+      const end = Math.min(start + step, latest);
+      try {
+        const part = await provider.getLogs({ address: FACTORY_ADDRESS, topics:[topic0], fromBlock: start, toBlock: end });
+        logs.push(...part);
+        start = end + 1;
+        if (step < 100_000) step = Math.min(100_000, Math.floor(step * 1.5));
+      } catch (e: any) {
+        const msg = e?.message || '';
+        const code = e?.code;
+        if (code === -32005 || /limit exceeded|block range|query timeout/i.test(msg)) {
+          if (step > 50) { step = Math.max(50, Math.floor(step/2)); continue; }
+        }
+        throw e;
+      }
+    }
+    const metaIndex = await readIndex();
+    const metaByPool: Record<string,{ metadataURI?: string; sortOrder?: number; indexURI?: string }> = {};
+    for (const log of logs) {
+      try {
+        const parsed = iface.parseLog({ topics: log.topics, data: log.data });
+        const pool = String(parsed.args[0]).toLowerCase();
+        const metadataURI0 = String(parsed.args[3] || '');
+        const metadataURI = metadataURI0 || undefined;
+        const sortOrder = Number(parsed.args[4]);
+        metaByPool[pool] = { metadataURI, sortOrder };
+      } catch {/* ignore */}
+    }
+    // Merge index overrides
+    for (const k of Object.keys(metaIndex)) {
+      const lower = k.toLowerCase();
+      const uri = metaIndex[k];
+      if (!metaByPool[lower]) metaByPool[lower] = { metadataURI: undefined, sortOrder: undefined, indexURI: uri };
+      else metaByPool[lower].indexURI = uri;
+    }
+    // Get pool list from factory
+    const poolAddrs: string[] = await factory.getPools();
+    // Parallel basic info fetch
+    const infos = await Promise.all(poolAddrs.map(async addr => {
+      const pool = new Contract(addr, PoolArtifact.abi, provider);
+      try {
+        const info = await pool.getInfo().catch(async () => ({
+          stablecoin: await pool.stablecoin(),
+          ticketPrice: await pool.ticketPrice(),
+          minFill: await pool.minFill(),
+          maxFill: await pool.maxFill(),
+          createdAt: await pool.createdAt(),
+          countdownSeconds: await pool.countdownSeconds(),
+          refundDeadlineSeconds: await pool.refundDeadlineSeconds(),
+          minReached: await pool.minReached(),
+          drawn: await pool.drawn(),
+          cancelled: (await pool.cancelled?.().catch(()=>false)) || false,
+          totalTickets: await pool.totalTickets(),
+          totalRaised: await pool.totalRaised(),
+          countdownStartAt: await pool.countdownStartAt(),
+          winner: await pool.winner(),
+        }));
+        return { addr, info };
+      } catch { return { addr, info: null }; }
+    }));
+    // Metadata concurrent fetch (lightweight; limit 5)
+    const concurrency = 5;
+    let active = 0;
+    const queue = infos.filter(x => x.info).map(x => async () => {
+      const lower = x.addr.toLowerCase();
+      const extra = metaByPool[lower] || {};
+      const base: any = {
+        address: x.addr,
+        stablecoin: x.info.stablecoin,
+        ticketPrice: String(x.info.ticketPrice),
+        minFill: String(x.info.minFill),
+        maxFill: String(x.info.maxFill),
+        createdAt: Number(x.info.createdAt),
+        countdownSeconds: Number(x.info.countdownSeconds),
+        refundDeadlineSeconds: Number(x.info.refundDeadlineSeconds),
+        minReached: x.info.minReached,
+        drawn: x.info.drawn,
+        cancelled: Boolean(x.info.cancelled || false),
+        totalTickets: Number(x.info.totalTickets),
+        totalRaised: String(x.info.totalRaised),
+        countdownStartAt: Number(x.info.countdownStartAt),
+        winner: x.info.winner,
+        metadataURI: extra.indexURI || extra.metadataURI,
+        sortOrder: extra.sortOrder,
+        meta: null as any
+      };
+      const candidateUris: string[] = [];
+      if (extra.indexURI) candidateUris.push(extra.indexURI);
+      if (extra.metadataURI) candidateUris.push(extra.metadataURI);
+      if (!candidateUris.length && base.metadataURI && base.metadataURI.startsWith('ipfs://')) {
+        candidateUris.push(`https://ipfs.io/ipfs/${base.metadataURI.slice('ipfs://'.length)}`);
+      }
+      for (const u of candidateUris) {
+        try {
+          const r = await fetch(u, { cache: 'no-store' });
+          if (!r.ok) continue;
+          const j = await r.json().catch(()=>null);
+          if (j && (j.title || j.image || j.description)) { base.meta = j; break; }
+        } catch {/* ignore */}
+      }
+      return base;
+    });
+    const out: any[] = [];
+    async function runNext(): Promise<void> {
+      if (!queue.length) return;
+      while (active < concurrency && queue.length) {
+        const fn = queue.shift()!;
+        active++;
+        fn().then(r => { out.push(r); }).catch(()=>{}).finally(()=>{ active--; runNext(); });
+      }
+    }
+    await runNext();
+    // wait until completion
+    while (active > 0) { await new Promise(r=>setTimeout(r,50)); }
+    // sort
+    out.sort((a,b)=> ( (a.sortOrder ?? 1e9) - (b.sortOrder ?? 1e9) ));
+    return res.json({ items: out, count: out.length, factory: FACTORY_ADDRESS });
+  } catch (e:any) {
+    console.error('/api/pools error', e);
+    return res.status(500).json({ error: 'internal_error', message: e?.message || String(e) });
+  }
+});
 
 // Tail recent logs
 app.get('/api/logs', requireApiKey, async (req, res) => {
