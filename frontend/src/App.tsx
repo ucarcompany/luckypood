@@ -63,7 +63,7 @@ export default function App() {
           <h1>{t('title')}</h1>
           <span className="subtitle">{t('subtitle_tagline')}</span>
         </div>
-        <div style={{display:'flex', alignItems:'center', gap:8}}>
+        <div className="header-actions" style={{display:'flex', alignItems:'center', gap:8}}>
           <select value={lang} onChange={(e)=>onLangChange(e.target.value)} style={{padding:'6px 8px', borderRadius:8}}>
             <option value="zh">简体中文</option>
             <option value="en">English</option>
@@ -123,10 +123,12 @@ export default function App() {
             const dappUrl = (PUBLIC_URL && PUBLIC_URL.length>0) ? PUBLIC_URL : (window?.location?.origin || '')
             const mm = `https://metamask.app.link/dapp/${dappUrl.replace(/^https?:\/\//,'')}`
             const okx = `okx://wallet/dapp?url=${encodeURIComponent(dappUrl)}`
+            const binance = `bnc://app/dapp?url=${encodeURIComponent(dappUrl)}`
             return (
               <>
                 <a href={mm} target="_blank" rel="noreferrer"><button>{t('open_metamask')}</button></a>
                 <a href={okx}><button>{t('open_okx')}</button></a>
+                <a href={binance}><button>{t('open_binance')}</button></a>
               </>
             )
           })()}

@@ -16,6 +16,15 @@ body{margin:0;font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial;backgr
 
 .container{max-width:1100px;margin:0 auto;padding:28px 20px}
 header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+@media (max-width: 640px){
+	header{flex-wrap:wrap;gap:10px}
+	header .title{flex:1 1 100%;display:flex;justify-content:space-between;align-items:center}
+	header .title h1{font-size:22px}
+	header .subtitle{font-size:12px}
+	.header-actions{flex:1 1 100%;display:flex;justify-content:flex-end}
+	.header-actions select{font-size:12px}
+	.header-actions .btn-primary{padding:8px 12px;font-size:13px}
+}
 .title{display:flex;align-items:center;gap:10px}
 .title h1{margin:0;font-size:28px;letter-spacing:.5px}
 .subtitle{color:var(--muted);font-size:13px}
