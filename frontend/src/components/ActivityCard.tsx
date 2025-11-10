@@ -25,6 +25,7 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
   const [decimals, setDecimals] = useState(18)
   const [userTickets, setUserTickets] = useState<number>(0)
   const [txBusy, setTxBusy] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   // 图片显示与容错：尝试主 URL -> 失败后自动回退到 HTTP/HTTPS 另一端口
   const [imgVisible, setImgVisible] = useState(true)
   const [imgSrc, setImgSrc] = useState<string | undefined>(info.meta?.image)
@@ -272,8 +273,8 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
     })()
   }, [account, provider, info.address])
   return (
-    <div className="card" style={{padding:16, marginBottom:16}}>
-      <div className="head-row">
+    <div className={`card ${expanded ? 'expanded' : ''}`} style={{padding:16, marginBottom:16}}>
+      <div className="head-row clickable" onClick={()=> setExpanded(v=>!v)}>
         {imgSrc && imgVisible ? (
           <img
             className="thumb"
@@ -301,6 +302,10 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
               {info.meta?.description && <div className="card-desc" style={{marginTop:4}} title={info.meta.description}>{info.meta.description}</div>}
             </div>
             {info.drawn ? <span className="badge">{t('drawn')}</span> : (notStarted ? <span className="badge">{t('not_started')}</span> : (info.minReached ? <span className="badge">{t('countdown')}</span> : <span className="badge">{t('fundraising')}</span>))}
+          </div>
+          <div style={{marginTop:6, fontSize:12, color:'#64748b'}}>
+            <span style={{userSelect:'none'}}>{expanded ? t('show_less') : t('show_more')}</span>
+            <span style={{marginLeft:6, display:'inline-block', transition:'transform .2s', transform:`rotate(${expanded?180:0}deg)`}}>▾</span>
           </div>
         </div>
       </div>
@@ -345,9 +350,9 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
           <div style={{color:'#334155'}}>{t('countdown_left')}：{`${Math.floor(remainSec/3600)}h ${Math.floor((remainSec%3600)/60)}m ${remainSec%60}s`}</div>
         </div>
       )}
-      <div className="actions" style={{marginTop:12}}>
+  <div className="actions" style={{marginTop:12}} onClick={(e)=> e.stopPropagation()}>
   <label>{t('count')}：</label>
-        <input type="number" min={1} max={Math.max(1, remaining)} value={count} onChange={e => setCount(Math.min(Math.max(1, Number(e.target.value)||1), Math.max(1, remaining)))} style={{width:90}} />
+    <input className="amount-input" type="number" min={1} max={Math.max(1, remaining)} value={count} onChange={e => setCount(Math.min(Math.max(1, Number(e.target.value)||1), Math.max(1, remaining)))} />
   <button className="btn-primary" disabled={!account || txBusy || remaining===0 || notStarted} onClick={participate}>{t('participate')}</button>
         <button disabled={!canRefund || txBusy} onClick={refund}>{t('refund')}</button>
         <button disabled={txBusy || !isReadyToDraw} title={!isReadyToDraw ? drawStatusMessage() : undefined} onClick={tryDraw}>{t('tryDraw')}</button>
