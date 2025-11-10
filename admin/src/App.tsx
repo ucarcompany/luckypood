@@ -390,6 +390,37 @@ export default function App(){
     finally { setSyncing(false) }
   }
 
+  // 批量为所有池创建/刷新稳定别名 meta/<pool>.json
+  const [aliasing, setAliasing] = useState(false)
+  const aliasAll = async () => {
+    if (!FACTORY_ADDRESS || !BACKEND_URL) return alert('缺少 FACTORY_ADDRESS 或 BACKEND_URL')
+    setAliasing(true)
+    try {
+      // 优先使用当前已加载的列表，否则从链上获取
+      let addrs = pools.map(p=>p.address)
+      if (addrs.length === 0 && readProvider) {
+        try {
+          const f = new Contract(FACTORY_ADDRESS, FactoryArtifact.abi, readProvider)
+          addrs = await f.getPools()
+        } catch {}
+      }
+      if (addrs.length === 0) { alert('未找到任何池地址'); return }
+      const headers: Record<string,string> = { 'Content-Type': 'application/json' }
+      { const dynKey = getApiKey(); if (dynKey) headers['x-api-key'] = dynKey }
+      let ok = 0, fail = 0
+      for (const addr of addrs) {
+        try {
+          const r = await fetch(`${BACKEND_URL}/api/meta/alias`, { method:'POST', headers, body: JSON.stringify({ pool: addr }) })
+          if (r.ok) ok++; else fail++
+        } catch { fail++ }
+      }
+      alert(`别名生成完成：成功 ${ok} 条，失败 ${fail} 条`)
+    } catch (e:any) {
+      console.error(e)
+      alert(e?.message || String(e))
+    } finally { setAliasing(false) }
+  }
+
   return (
     <div className="container">
       {PASS_HASH_ENV && !authed ? (
@@ -412,6 +443,7 @@ export default function App(){
           )}
           <button style={{marginLeft:8}} onClick={loadPools}>刷新列表</button>
           <button style={{marginLeft:8}} disabled={syncing} onClick={syncIndex}>{syncing ? '同步中...' : '一键修复索引'}</button>
+          <button style={{marginLeft:8}} disabled={aliasing} onClick={aliasAll}>{aliasing ? '别名中...' : '一键生成别名'}</button>
           {PASS_HASH_ENV && <button style={{marginLeft:8}} onClick={logout}>退出登录</button>}
         </div>
       </header>
