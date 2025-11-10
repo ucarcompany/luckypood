@@ -133,7 +133,7 @@ export default function App(){
   }, [])
 
   // 加载所有活动
-  const [pools, setPools] = useState<{address:string, info:any, owner?:string, meta?:{title?:string,description?:string,image?:string}, canDelete?: boolean}[]>([])
+  const [pools, setPools] = useState<{address:string, info:any, owner?:string, meta?:{title?:string,description?:string,image?:string}, canDelete?: boolean, alias?: { status: 'ok'|'missing'|'mismatch'|'unknown', aliasUri: string, indexUri?: string } }[]>([])
   const [loading, setLoading] = useState(false)
 
   const loadPools = async () => {
@@ -168,7 +168,40 @@ export default function App(){
         try { owner = await (pool as any).owner?.() } catch {}
         res.push({ address: addr, info, owner, canDelete })
       }
-      setPools(res)
+      // 计算别名状态
+      try {
+        // 读取后端 index
+        let idx: Record<string,string> = {}
+        try {
+          const r1 = await fetch(`${BACKEND_URL}/meta/index.json`)
+          if (r1.ok) idx = await r1.json().catch(()=>({}))
+          if (!idx || typeof idx !== 'object') throw new Error('bad static index')
+        } catch {
+          try {
+            const r2 = await fetch(`${BACKEND_URL}/api/meta/index`)
+            if (r2.ok) idx = await r2.json().catch(()=>({}))
+          } catch {}
+        }
+        // 并行检测 alias 是否存在
+        const updated = await Promise.all(res.map(async item => {
+          const lower = item.address.toLowerCase()
+          const aliasUri = `${BACKEND_URL}/meta/${lower}.json`
+          const indexUri = idx?.[lower]
+          let aliasExists = false
+          try {
+            const r = await fetch(aliasUri, { cache: 'no-store' as RequestCache })
+            aliasExists = r.ok
+          } catch { aliasExists = false }
+          let status: 'ok'|'missing'|'mismatch'|'unknown' = 'unknown'
+          if (aliasExists && indexUri === aliasUri) status = 'ok'
+          else if (!aliasExists) status = 'missing'
+          else if (aliasExists && indexUri && indexUri !== aliasUri) status = 'mismatch'
+          return { ...item, alias: { status, aliasUri, indexUri } }
+        }))
+        setPools(updated)
+      } catch {
+        setPools(res)
+      }
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }
@@ -264,6 +297,60 @@ export default function App(){
       console.error(e)
       alert(e?.message || String(e))
     } finally { setCanceling(null) }
+  }
+
+  // 单个池：刷新/创建别名
+  const [aliasBusy, setAliasBusy] = useState<string|null>(null)
+  const refreshAlias = async (addr: string) => {
+    if (!BACKEND_URL || !FACTORY_ADDRESS) return
+    setAliasBusy(addr)
+    try {
+      const lower = addr.toLowerCase()
+      // 1) 读取 index
+      let indexUri: string | undefined
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/meta/index`)
+        if (r.ok) {
+          const j = await r.json().catch(()=>null) as Record<string,string>|null
+          if (j) indexUri = j[lower]
+        }
+      } catch {}
+      // 2) 若没有 index uri，则从链上日志找 PoolCreated 的 metadataURI
+      let uri = indexUri
+      if (!uri && readProvider) {
+        try {
+          const iface = new Interface(FactoryArtifact.abi as any)
+          const ev = iface.getEvent('PoolCreated')
+          const topic0 = (ev as any).topicHash || (iface as any).getEventTopic?.('PoolCreated')
+          const logs = await getLogsBatched(readProvider, { address: FACTORY_ADDRESS, topics: [topic0] }, { fromBlock: FACTORY_DEPLOY_BLOCK })
+          for (const l of logs) {
+            try {
+              const parsed: any = iface.parseLog({ topics: l.topics, data: l.data })
+              const p = String(parsed?.args?.[0] || '').toLowerCase()
+              if (p === lower) { uri = String(parsed?.args?.[3] || ''); break }
+            } catch {}
+          }
+        } catch {}
+      }
+      const headers: Record<string,string> = { 'Content-Type': 'application/json' }
+      { const ak = getApiKey(); if (ak) headers['x-api-key'] = ak }
+      const body: any = { pool: addr }
+      if (uri) body.uri = uri
+      const r = await fetch(`${BACKEND_URL}/api/meta/alias`, { method:'POST', headers, body: JSON.stringify(body) })
+      if (!r.ok) throw new Error('alias 写入失败')
+      // 刷新该池的别名状态
+      const aliasUri = `${BACKEND_URL}/meta/${lower}.json`
+      let aliasExists = false
+      try { const t = await fetch(aliasUri, { cache:'no-store' as RequestCache }); aliasExists = t.ok } catch {}
+      setPools(prev => prev.map(x => x.address===addr ? ({
+        ...x,
+        alias: { status: aliasExists ? 'ok' : 'missing', aliasUri, indexUri: aliasUri }
+      }) : x))
+      alert('已刷新别名')
+    } catch (e:any) {
+      console.error(e)
+      alert(e?.message || String(e))
+    } finally { setAliasBusy(null) }
   }
 
   const uploadImage = async (): Promise<string> => {
@@ -542,9 +629,21 @@ export default function App(){
                   <div style={{fontSize:12,color:'#777'}}>状态：{p.info.drawn ? '已开奖' : (p.info.cancelled ? '已取消' : (p.info.minReached ? '倒计时' : '许愿中'))}</div>
                   <div style={{fontSize:12,color:'#777'}}>删除支持：{p.canDelete ? '支持（新版本）' : '不支持（旧版本）'}</div>
                   {p.owner && <div style={{fontSize:12,color:'#777'}}>拥有者：{p.owner}</div>}
+                  <div style={{fontSize:12,marginTop:4}}>
+                    别名：{
+                      p.alias?.status === 'ok' ? <span style={{color:'#16a34a'}}>已就绪</span> :
+                      p.alias?.status === 'missing' ? <span style={{color:'#dc2626'}}>缺失</span> :
+                      p.alias?.status === 'mismatch' ? <span style={{color:'#d97706'}}>索引未指向别名</span> :
+                      <span style={{color:'#64748b'}}>未知</span>
+                    }
+                    {p.alias?.aliasUri && (
+                      <a href={p.alias.aliasUri} target="_blank" rel="noreferrer" style={{marginLeft:8}}>查看</a>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <button style={{marginRight:8}} onClick={()=>loadLogs(p.address)}>查看日志</button>
+                  <button style={{marginRight:8}} disabled={aliasBusy===p.address} onClick={()=>refreshAlias(p.address)}>{aliasBusy===p.address ? '刷新中...' : '刷新别名'}</button>
                   <button disabled={canceling===p.address || p.info.drawn || !p.canDelete} onClick={()=>adminCancel(p.address)}>{canceling===p.address ? '处理中...' : (p.canDelete ? '删除并退款' : '不支持删除')}</button>
                 </div>
               </div>
