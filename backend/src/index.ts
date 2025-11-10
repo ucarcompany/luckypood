@@ -256,7 +256,27 @@ app.post('/api/meta/index', requireApiKey, async (req, res) => {
     const idx = await readIndex()
     idx[lower] = String(uri)
     await writeIndex(idx)
-    return res.json({ ok: true })
+    // 自动创建稳定别名：如果提供的 URI 指向当前 BASE_URL 域名下的 /meta/ 随机文件，则复制一份为 meta/<pool>.json
+    try {
+      const base = new URL(BASE_URL)
+      const u = new URL(String(uri))
+      const sameHost = (u.hostname === base.hostname && u.protocol === base.protocol)
+      if (sameHost && u.pathname.startsWith('/meta/') && !u.pathname.endsWith(`${lower}.json`)) {
+        const r = await fetch(String(uri))
+        if (r.ok) {
+          const j = await r.json().catch(()=>null)
+          if (j && typeof j === 'object') {
+            const aliasPath = path.join(METADATA_DIR, `${lower}.json`)
+            await fs.promises.writeFile(aliasPath, JSON.stringify(j, null, 2), 'utf-8')
+            // 将 index 指向别名，保证稳定
+            const aliasUri = `${base.origin}/meta/${lower}.json`
+            const idx2 = await readIndex(); idx2[lower] = aliasUri; await writeIndex(idx2)
+            return res.json({ ok: true, aliased: true, alias: aliasUri })
+          }
+        }
+      }
+    } catch (e) { /* ignore alias errors */ }
+    return res.json({ ok: true, aliased: false })
   } catch (err) { console.error(err); return res.status(500).json({ error: 'internal_error' }) }
 })
 
@@ -282,8 +302,70 @@ app.get('/api/meta/index', async (_req, res) => {
 // Manual migration endpoint (guarded by API_KEY if set)
 app.post('/api/meta/migrate', requireApiKey, async (_req, res) => {
   try {
-    const r = await migrateToBaseUrl()
-    return res.json({ ok: true, ...r, baseUrl: BASE_URL })
+    const force = ((_req.query.force as any) === '1' || _req.query.force === 'true')
+    // 若 force 则强制重写 index.json 里所有 http(s) 且主机!=BASE_URL.host / 私网条目
+    let migrated = await migrateToBaseUrl()
+    if (force) {
+      try {
+        const base = new URL(BASE_URL)
+        const idx = await readIndex()
+        let changed = false
+        for (const k of Object.keys(idx)) {
+          const v = idx[k]
+          try {
+            const u = new URL(v)
+            const need = u.hostname !== base.hostname || u.protocol !== base.protocol || (u.port && u.port !== base.port) || isPrivateHost(u.hostname)
+            if (need) {
+              const pathname = u.pathname + (u.search || '')
+              idx[k] = `${base.origin}${pathname}`
+              changed = true
+            }
+          } catch {/* skip non-url */}
+        }
+        if (changed) {
+          await writeIndex(idx)
+          migrated.indexChanged = true
+        }
+      } catch (e) { console.warn('force migrate index failed', e) }
+    }
+    return res.json({ ok: true, force, ...migrated, baseUrl: BASE_URL })
+  } catch (e) {
+    console.error(e)
+    return res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// 创建或刷新某池的稳定别名 meta/<pool>.json，便于前端稳定加载（即使原随机文件名丢失）。
+// POST /api/meta/alias  { pool, uri? }  （若未提供 uri 则从 index.json 获取）
+app.post('/api/meta/alias', requireApiKey, async (req, res) => {
+  try {
+    const { pool, uri } = req.body || {}
+    if (!pool) return res.status(400).json({ error: 'missing_pool' })
+    const lower = String(pool).toLowerCase()
+    let target = uri as string | undefined
+    if (!target) {
+      const idx = await readIndex()
+      target = idx[lower]
+    }
+    if (!target) return res.status(400).json({ error: 'missing_uri' })
+    let json: any = null
+    try {
+      const r = await fetch(target)
+      if (!r.ok) return res.status(400).json({ error: 'fetch_failed', status: r.status })
+      json = await r.json().catch(()=>null)
+    } catch (e) {
+      return res.status(400).json({ error: 'fetch_error' })
+    }
+    if (!json || typeof json !== 'object') return res.status(400).json({ error: 'invalid_metadata' })
+    // 写入别名文件
+    const aliasPath = path.join(METADATA_DIR, `${lower}.json`)
+    await fs.promises.writeFile(aliasPath, JSON.stringify(json, null, 2), 'utf-8')
+    // 更新 index 中该池地址指向别名（更稳定）
+    const idx2 = await readIndex()
+    const aliasUri = `${BASE_URL}/meta/${lower}.json`
+    idx2[lower] = aliasUri
+    await writeIndex(idx2)
+    return res.json({ ok: true, pool: lower, alias: aliasUri })
   } catch (e) {
     console.error(e)
     return res.status(500).json({ error: 'internal_error' })
