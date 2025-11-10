@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FACTORY_ADDRESS, DEFAULT_RPC, BACKEND_URL } from '../config'
+import { FACTORY_ADDRESS, DEFAULT_RPC, BACKEND_URL, PUBLIC_URL } from '../config'
 import { JsonRpcProvider, Contract, BrowserProvider } from 'ethers'
 import FactoryArtifact from '@abi/LuckyPoolFactory.json'
 import { useWeb3 } from '../web3'
@@ -63,6 +63,7 @@ export default function DebugPanel(){
         <div>FACTORY_ADDRESS: <code>{FACTORY_ADDRESS || '(empty)'}</code></div>
         <div>DEFAULT_RPC: <code>{DEFAULT_RPC || '(empty)'}</code></div>
         <div>BACKEND_URL: <code>{BACKEND_URL || '(empty)'}</code></div>
+        <div>PUBLIC_URL: <code>{PUBLIC_URL || '(empty)'}</code></div>
         <div>Detected chainId: <code>{chainIdHex || '(unknown)'}</code></div>
         <div>RPC check: <code>{rpcOk}</code></div>
         {rpcMatrix.length>0 && (
@@ -78,6 +79,36 @@ export default function DebugPanel(){
         <div style={{marginTop:6}}>
           <button onClick={()=>{ localStorage.setItem('debug','0'); location.replace(location.pathname) }}>隐藏</button>
           <button style={{marginLeft:8}} onClick={()=>{ localStorage.setItem('debug','1'); location.reload() }}>刷新诊断</button>
+        </div>
+        {/* 深链辅助诊断 */}
+        <div style={{marginTop:12, padding:'8px 10px', background:'#f1f5f9', borderRadius:8}}>
+          <strong>币安深链诊断</strong>
+          <div style={{marginTop:6, fontSize:12, color:'#475569'}}>
+            {(() => {
+              const base = (PUBLIC_URL && PUBLIC_URL.length>0) ? PUBLIC_URL : (window?.location?.origin || '')
+              const candidates = [
+                `https://app.binance.com/en/wallet/dapp?url=${encodeURIComponent(base)}`,
+                `https://www.binance.com/en/wallet/dapp?url=${encodeURIComponent(base)}`,
+                `bnc://app/dapp?url=${encodeURIComponent(base)}`,
+                `binance://app/dapp?url=${encodeURIComponent(base)}`
+              ]
+              return (
+                <div>
+                  <div>当前 base: <code>{base}</code></div>
+                  <div style={{marginTop:4}}>候选链接（点击逐个尝试）:</div>
+                  {candidates.map(c => (
+                    <div key={c} style={{display:'flex', alignItems:'center', gap:6, marginTop:4}}>
+                      <button style={{padding:'2px 6px'}} onClick={()=>{ window.location.href = c }}>尝试</button>
+                      <code style={{wordBreak:'break-all'}}>{c}</code>
+                    </div>
+                  ))}
+                  <div style={{marginTop:6, lineHeight:1.5}}>
+                    提示：若 HTTPS 正常但 App 内置浏览器仍中断，优先使用自定义域名（你已在 DNS 添加 A/CNAME），并在 Vercel 项目里绑定域名后，设置 <code>VITE_PUBLIC_URL</code> 重新部署。DNS 生效需等待 TTL（当前 300s）。
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
         </div>
       </div>
     </div>
