@@ -8,11 +8,11 @@ import path from 'path';
 import fs from 'fs';
 import http from 'http';
 import https from 'https';
-import { Contract } from 'ethers';
+// Use ethers v5 imports
+import { Contract, utils } from 'ethers';
 import { JsonRpcProvider } from '@ethersproject/providers';
-import { Interface } from '@ethersproject/abi';
-import FactoryArtifact from './abi/LuckyPoolFactory.json';
-import PoolArtifact from './abi/LuckyPool.json';
+import FactoryArtifactFull from '../../shared/abi/LuckyPoolFactory.json';
+import PoolArtifactFull from '../../shared/abi/LuckyPool.json';
 
 // Basic configuration via env vars
 const PORT = parseInt(process.env.PORT || '4000', 10);
@@ -347,9 +347,9 @@ app.get('/api/pools', async (req, res) => {
   try {
     const provider = await pickRpc();
     if (!provider) return res.status(502).json({ error: 'rpc_unavailable' });
-    const factory = new Contract(FACTORY_ADDRESS, FactoryArtifact.abi, provider);
+  const factory = new Contract(FACTORY_ADDRESS, (FactoryArtifactFull as any).abi || [], provider as any);
     // PoolCreated event scanning (limited by FACTORY_DEPLOY_BLOCK to reduce block range)
-    const iface = new Interface(FactoryArtifact.abi);
+  const iface = new utils.Interface(((FactoryArtifactFull as any).abi || []));
     const eventFrag = iface.getEvent('PoolCreated');
     const topic0 = (eventFrag as any).topicHash || (eventFrag as any).topic || (iface as any).getEventTopic?.('PoolCreated');
     // batched log fetch
@@ -378,7 +378,7 @@ app.get('/api/pools', async (req, res) => {
     const metaByPool: Record<string,{ metadataURI?: string; sortOrder?: number; indexURI?: string }> = {};
     for (const log of logs) {
       try {
-        const parsed = iface.parseLog({ topics: log.topics, data: log.data });
+  const parsed = iface.parseLog(log);
         const pool = String(parsed.args[0]).toLowerCase();
         const metadataURI0 = String(parsed.args[3] || '');
         const metadataURI = metadataURI0 || undefined;
@@ -397,7 +397,7 @@ app.get('/api/pools', async (req, res) => {
     const poolAddrs: string[] = await factory.getPools();
     // Parallel basic info fetch
     const infos = await Promise.all(poolAddrs.map(async addr => {
-      const pool = new Contract(addr, PoolArtifact.abi, provider);
+  const pool = new Contract(addr, (PoolArtifactFull as any).abi || [], provider as any);
       try {
         const info = await pool.getInfo().catch(async () => ({
           stablecoin: await pool.stablecoin(),
