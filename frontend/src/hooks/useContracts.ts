@@ -271,15 +271,11 @@ export function usePools() {
         } catch {}
       }
 
-      const res: PoolInfo[] = []
-      for (const addr of poolAddrs) {
+      // --- 优化：并行获取所有池基本信息 ---
+      const poolInfos = await Promise.all(poolAddrs.map(async addr => {
         const pool = new Contract(addr, PoolArtifact.abi, readProv)
-        let info: any
         try {
-          info = await pool.getInfo()
-        } catch (e) {
-          // 兼容旧版合约：逐字段读取，避免 getInfo ABI 不匹配
-          info = {
+          const info = await pool.getInfo().catch(async () => ({
             stablecoin: await pool.stablecoin(),
             ticketPrice: await pool.ticketPrice(),
             minFill: await pool.minFill(),
@@ -294,10 +290,45 @@ export function usePools() {
             totalRaised: await pool.totalRaised(),
             countdownStartAt: await pool.countdownStartAt(),
             winner: await pool.winner(),
-          }
+          }))
+          return { addr, info }
+        } catch (e) {
+          console.warn('[pool] getInfo failed for', addr, e)
+          return { addr, info: null }
         }
-    const lower = addr.toLowerCase()
-    const extra = metaByPool[lower] || {}
+      }))
+
+      // 元数据请求并行 + 速率限制（简单并发池）
+      const metaFetchCache: Record<string, Promise<any>> = {}
+      const tryLoadMeta = async (uri: string | undefined, attempt = 1): Promise<any> => {
+        if (!uri) return null
+        if (!metaFetchCache[uri]) {
+          metaFetchCache[uri] = (async () => {
+            try {
+              const r = await fetch(uri, { cache: 'no-store' as RequestCache })
+              if (!r.ok) {
+                if (attempt === 1) console.warn('[meta] not ok', uri, r.status)
+                return null
+              }
+              const j = await r.json().catch(()=>null)
+              if (!j && attempt === 1) console.warn('[meta] json parse failed', uri)
+              return j
+            } catch (e:any) {
+              if (attempt === 1) console.warn('[meta] fetch error', uri, e?.message || e)
+              return null
+            }
+          })()
+        }
+        return metaFetchCache[uri]
+      }
+
+      const concurrency = 5
+      const queue: Array<() => Promise<void>> = []
+      const out: PoolInfo[] = []
+      for (const { addr, info } of poolInfos) {
+        if (!info) continue
+        const lower = addr.toLowerCase()
+        const extra = metaByPool[lower] || {}
         const item: PoolInfo = {
           address: addr,
           stablecoin: info.stablecoin,
@@ -314,118 +345,91 @@ export function usePools() {
           totalRaised: info.totalRaised,
           countdownStartAt: Number(info.countdownStartAt),
           winner: info.winner,
-          // 优先使用后端索引中的 URI（覆盖事件里的 metadataURI）
           metadataURI: extra.indexURI || extra.metadataURI,
           sortOrder: extra.sortOrder
         }
-        // 2) fetch metadata if available, with multiple fallbacks for tests
-        // 元数据缓存，避免同一次加载过程中对同一 URI 多次重复请求造成 429
-        const metaFetchCache: Record<string, Promise<any>> = {}
-        const tryLoadMeta = async (uri: string | undefined, attempt = 1): Promise<any> => {
-          if (!uri) return null
-          if (!metaFetchCache[uri]) {
-            metaFetchCache[uri] = (async () => {
-              try {
-                const r = await fetch(uri, { cache: 'no-store' as RequestCache })
-                if (!r.ok) {
-                  if (attempt === 1) console.warn('[meta] fetch not ok', uri, r.status)
-                  return null
+        queue.push(async () => {
+          let meta: any = null
+          let metaSrc = 'placeholder'
+          const eventURI = extra?.metadataURI
+          const indexURI = extra?.indexURI
+          if (indexURI) {
+            const tryUri = rewriteToBackendOrigin(indexURI)
+            meta = await tryLoadMeta(tryUri)
+            if (!meta) { meta = await tryLoadMeta(tryUri, 2) }
+            if (meta) metaSrc = 'backend_index'
+          }
+          if (!meta && eventURI) {
+            const tryUri = rewriteToBackendOrigin(eventURI)
+            meta = await tryLoadMeta(tryUri)
+            if (!meta) { meta = await tryLoadMeta(tryUri, 2) }
+            if (meta) metaSrc = 'factory_event'
+          }
+          if (!meta && BACKEND_URL) {
+            const uri = `${BACKEND_URL}/meta/${lower}.json`
+            meta = await tryLoadMeta(uri)
+            if (!meta) { meta = await tryLoadMeta(uri, 2) }
+            if (meta) metaSrc = 'backend_lookup'
+          }
+            if (!meta && item.metadataURI && item.metadataURI.startsWith('ipfs://')) {
+            const cid = item.metadataURI.slice('ipfs://'.length)
+            meta = await tryLoadMeta(`https://ipfs.io/ipfs/${cid}`)
+            if (!meta) { meta = await tryLoadMeta(`https://ipfs.io/ipfs/${cid}`, 2) }
+            if (meta) metaSrc = 'ipfs_gateway'
+          }
+          if (meta && (meta.title || meta.image || meta.description || meta.startAt)) {
+            let image: string | undefined = meta.image
+            try {
+              if (typeof image === 'string' && image.length > 0) {
+                const base = BACKEND_URL ? new URL(BACKEND_URL) : null
+                const rewriteNeeded = () => {
+                  try {
+                    const u = new URL(image!)
+                    if (image!.startsWith('/uploads/')) return true
+                    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') return true
+                    if (base && u.hostname === base.hostname && u.port && base.port && u.port !== base.port) return true
+                    return false
+                  } catch { return false }
                 }
-                const j = await r.json().catch(()=>null)
-                if (!j && attempt === 1) console.warn('[meta] json parse failed', uri)
-                return j
-              } catch (e:any) {
-                if (attempt === 1) console.warn('[meta] fetch error', uri, e?.message || e)
-                return null
+                if (rewriteNeeded() && base) {
+                  try {
+                    const u = image!.startsWith('/uploads/') ? null : new URL(image!)
+                    const p = u ? (u.pathname + (u.search || '')) : image!
+                    image = `${base.origin}${p}`
+                  } catch {}
+                }
               }
-            })()
+            } catch {}
+            item.meta = { title: meta.title, image, description: meta.description, startAt: meta.startAt ? Number(meta.startAt) : undefined, __src: metaSrc }
+          } else {
+            item.meta = { title: '测试活动', description: '占位元数据（未提供或解析失败）。', image: undefined, startAt: undefined, __src: 'placeholder' }
           }
-          return metaFetchCache[uri]
-        }
-        let meta: any = null;
-        let metaSrc = 'placeholder';
-        const eventURI = extra?.metadataURI
-        const indexURI = extra?.indexURI
-        // 1. 先试后端索引中的 URI（indexURI）
-        if (indexURI) {
-          const tryUri = rewriteToBackendOrigin(indexURI)
-          meta = await tryLoadMeta(tryUri)
-          if (!meta) {
-            await new Promise(r=>setTimeout(r, 600))
-            meta = await tryLoadMeta(tryUri, 2)
-          }
-          if (meta) metaSrc = 'backend_index'
-        }
-        // 2. 再试合约事件中的 metadataURI（eventURI）
-        if (!meta && eventURI) {
-          const tryUri = rewriteToBackendOrigin(eventURI)
-          meta = await tryLoadMeta(tryUri)
-          if (!meta) {
-            await new Promise(r=>setTimeout(r, 800))
-            meta = await tryLoadMeta(tryUri, 2)
-          }
-          if (meta) metaSrc = 'factory_event'
-        }
-        // 3. 后端索引 /meta/<addr>.json 兜底（注意：如果后端未生成按地址命名的 JSON，此步可能 404）
-        if (!meta && BACKEND_URL) {
-          const lowerAddr = addr.toLowerCase()
-          const uri = `${BACKEND_URL}/meta/${lowerAddr}.json`
-          meta = await tryLoadMeta(uri)
-          if (!meta) {
-            // 第二次重试加入随机抖动，减少并发导致的限流冲突
-            await new Promise(r=>setTimeout(r, 600 + Math.floor(Math.random()*400)))
-            meta = await tryLoadMeta(uri, 2)
-          }
-          if (meta) metaSrc = 'backend_lookup'
-        }
-        // 4. ipfs:// 兜底
-        if (!meta && item.metadataURI && item.metadataURI.startsWith('ipfs://')) {
-          const cid = item.metadataURI.slice('ipfs://'.length)
-          meta = await tryLoadMeta(`https://ipfs.io/ipfs/${cid}`)
-          if (!meta) {
-            await new Promise(r=>setTimeout(r, 1000))
-            meta = await tryLoadMeta(`https://ipfs.io/ipfs/${cid}`, 2)
-          }
-          if (meta) metaSrc = 'ipfs_gateway'
-        }
-        // 4. 成功 or fallback
-        if (meta && (meta.title || meta.image || meta.description || meta.startAt)) {
-          // 处理图片在 metadata 中写成 http://localhost:4000/... 导致在其他设备访问不到的问题：
-          // 若检测到 localhost/127.0.0.1 且配置了 BACKEND_URL，则重写为 BACKEND_URL 的同路径
-          let image: string | undefined = meta.image
-          try {
-            if (typeof image === 'string' && image.length > 0) {
-              const base = BACKEND_URL ? new URL(BACKEND_URL) : null
-              const rewriteNeeded = () => {
-                try {
-                  const u = new URL(image!)
-                  // 条件：
-                  // 1) 相对路径 /uploads/
-                  // 2) localhost/127.0.0.1 主机
-                  // 3) 与 BACKEND_URL 主机相同但端口不同（例如图片是 4443，BACKEND_URL 是 4002）
-                  if (image!.startsWith('/uploads/')) return true
-                  if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') return true
-                  if (base && u.hostname === base.hostname && u.port && base.port && u.port !== base.port) return true
-                  return false
-                } catch { return false }
-              }
-              if (rewriteNeeded() && base) {
-                try {
-                  const u = image!.startsWith('/uploads/') ? null : new URL(image!)
-                  const p = u ? (u.pathname + (u.search || '')) : image!
-                  image = `${base.origin}${p}`
-                } catch { /* ignore */ }
-              }
-            }
-          } catch {}
-          item.meta = { title: meta.title, image, description: meta.description, startAt: meta.startAt ? Number(meta.startAt) : undefined, __src: metaSrc };
-        } else {
-          // 在开发模式下附加 metadataURI 便于调试
-          if (import.meta.env.DEV) console.warn('[meta] fallback placeholder for pool', addr, 'metadataURI=', item.metadataURI)
-          item.meta = { title: '测试活动', description: '占位元数据（未提供或解析失败）。', image: undefined, startAt: undefined, __src: 'placeholder' };
-        }
-        res.push(item)
+          out.push(item)
+          // 增量渲染：每处理完一个池就刷新 UI（减少首屏等待）
+          setPools(prev => {
+            const merged = [...prev.filter(p=>p.address!==item.address), item]
+            // 过滤取消/隐藏
+            const active = merged.filter(p => !p.cancelled && !HIDDEN_POOLS.includes(p.address.toLowerCase()))
+            active.sort((a,b)=> (a.sortOrder ?? 1e9) - (b.sortOrder ?? 1e9))
+            return active
+          })
+        })
       }
+      // 并发执行队列
+      const runners: Promise<void>[] = []
+      for (const task of queue) {
+        const p = task()
+        runners.push(p)
+        if (runners.length >= concurrency) {
+          await Promise.race(runners.map(async (rp,i)=> rp.then(()=>i)))
+          // 清理已完成的
+          for (let i=runners.length-1;i>=0;i--) {
+            if ((runners as any)[i].isFulfilled) continue
+          }
+        }
+      }
+      await Promise.all(runners)
+  const res = out
   // 过滤掉已取消的活动
   const active = res.filter(p => !p.cancelled && !HIDDEN_POOLS.includes(p.address.toLowerCase()))
   setCancelledCount(res.filter(p=>p.cancelled).length)
