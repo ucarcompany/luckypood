@@ -70,19 +70,41 @@ export function usePools() {
   const [hiddenCount, setHiddenCount] = useState(0)
 
   const rewriteToBackendOrigin = (uri?: string | null) => {
-  try {
+    // 仅在 URI 属于私网/localhost 或为站点内相对路径时，才重写到 BACKEND_URL；
+    // 避免将已是公网且不同主机的 URL 误改。
+    const isPrivateHost = (h: string) => {
+      const lower = (h || '').toLowerCase()
+      if (!lower) return false
+      if (lower === 'localhost' || lower === '127.0.0.1' || lower === '::1') return true
+      if (lower.startsWith('192.168.')) return true
+      if (lower.startsWith('10.')) return true
+      const m = /^172\.(\d+)\./.exec(lower); if (m) { const n = Number(m[1]); if (n>=16 && n<=31) return true }
+      return false
+    }
+    try {
       if (!uri) return undefined
       const base = BACKEND_URL ? new URL(BACKEND_URL) : null
-      const u = new URL(uri)
-      // 仅针对 http/https 的本机/局域网资源进行规范化
-      const isHttp = u.protocol === 'http:' || u.protocol === 'https:'
-      const isLocalHost = u.hostname === 'localhost' || u.hostname === '127.0.0.1'
-      const sameHost = base && u.hostname === base.hostname
-      if (isHttp && base && (isLocalHost || sameHost)) {
-        return `${base.origin}${u.pathname}${u.search || ''}`
+      if (!base) return uri
+      // 绝对 URL
+      try {
+        const u = new URL(uri)
+        const isHttp = u.protocol === 'http:' || u.protocol === 'https:'
+        if (!isHttp) return uri
+        // 仅私网/localhost 才重写到 BACKEND_URL
+        if (isPrivateHost(u.hostname)) {
+          return `${base.origin}${u.pathname}${u.search || ''}`
+        }
+        return uri
+      } catch {
+        // 非绝对（相对）路径，如 /uploads/... /meta/... 也重写
+        if (uri.startsWith('/uploads/') || uri.startsWith('/meta/')) {
+          return `${(new URL(BACKEND_URL!)).origin}${uri}`
+        }
+        return uri
       }
-      return uri
-    } catch { return uri || undefined }
+    } catch {
+      return uri || undefined
+    }
   }
 
   const ensureReadProvider = useCallback(async (forceFullScan = false) => {
@@ -186,45 +208,7 @@ export function usePools() {
     loadingRef.current = true
     if (!opts?.silent) { setLoading(true); setError(null); setErrorKind(null) } else { setRefreshing(true) }
     try {
-      // 优先走后端聚合接口：当 BACKEND_URL 存在且后端提供 /api/pools 时，可极大减少前端 RPC 调用
-      if (BACKEND_URL) {
-        try {
-          const agg = await fetch(`${BACKEND_URL}/api/pools`, { cache: 'no-store' })
-          if (agg.ok) {
-            const j = await agg.json()
-            if (j && Array.isArray(j.items)) {
-              const mapped: PoolInfo[] = (j.items as any[]).map((x:any) => ({
-                address: x.address,
-                stablecoin: x.stablecoin,
-                ticketPrice: BigInt(x.ticketPrice),
-                minFill: BigInt(x.minFill),
-                maxFill: BigInt(x.maxFill),
-                createdAt: Number(x.createdAt),
-                countdownSeconds: Number(x.countdownSeconds),
-                refundDeadlineSeconds: Number(x.refundDeadlineSeconds),
-                minReached: !!x.minReached,
-                drawn: !!x.drawn,
-                cancelled: !!x.cancelled,
-                totalTickets: Number(x.totalTickets),
-                totalRaised: BigInt(x.totalRaised),
-                countdownStartAt: Number(x.countdownStartAt),
-                winner: x.winner,
-                metadataURI: x.metadataURI,
-                sortOrder: x.sortOrder,
-                meta: x.meta || undefined
-              }))
-              const active = mapped.filter(p => !p.cancelled && !HIDDEN_POOLS.includes(p.address.toLowerCase()))
-              active.sort((a,b)=> (a.sortOrder ?? 1e9) - (b.sortOrder ?? 1e9))
-              setTotalPools(mapped.length)
-              setCancelledCount(mapped.filter(p=>p.cancelled).length)
-              setHiddenCount(mapped.filter(p=>HIDDEN_POOLS.includes(p.address.toLowerCase())).length)
-              setPools(active)
-              if (error) { setError(null); setErrorKind(null) }
-              return
-            }
-          }
-        } catch {/* ignore and fallback to direct chain */}
-      }
+      // 已撤回后端聚合端点 /api/pools；直接读取链上并并行获取元数据
 
       const poolAddrs: string[] = await factory.getPools()
       setTotalPools(poolAddrs.length)
@@ -279,7 +263,7 @@ export function usePools() {
         console.warn('read PoolCreated logs failed', e)
       }
 
-      // 1.5) 后端索引兜底：尝试读取 BACKEND_URL/meta/index.json；若不存在则读 BACKEND_URL/api/meta/index
+  // 1.5) 后端索引兜底：尝试读取 BACKEND_URL/meta/index.json；若不存在则读 BACKEND_URL/api/meta/index
       if (BACKEND_URL) {
         try {
           const r = await fetch(`${BACKEND_URL}/meta/index.json?ts=${Date.now()}`)
