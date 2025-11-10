@@ -21,7 +21,8 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
   const { t } = useTranslation()
   const { provider, account } = useWeb3()
   const toast = useToast()
-  const [count, setCount] = useState(1)
+  // 购买次数输入：使用字符串以允许用户在移动端删除为""，避免受最小值强制为 1 的控制
+  const [countStr, setCountStr] = useState('1')
   const [decimals, setDecimals] = useState(18)
   const [userTickets, setUserTickets] = useState<number>(0)
   const [txBusy, setTxBusy] = useState(false)
@@ -114,6 +115,12 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
 
   const [status, setStatus] = useState<string>('')
   const [ticketRange, setTicketRange] = useState<{start:number,end:number} | null>(null)
+
+  const count = useMemo(() => {
+    const n = Number(countStr)
+    if (!Number.isFinite(n)) return 0
+    return Math.max(0, Math.floor(n))
+  }, [countStr])
 
   const participate = async () => {
   if (!provider || !account) return alert(t('please_connect'))
@@ -352,8 +359,27 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
       )}
   <div className="actions" style={{marginTop:12}} onClick={(e)=> e.stopPropagation()}>
   <label>{t('count')}：</label>
-    <input className="amount-input" type="number" min={1} max={Math.max(1, remaining)} value={count} onChange={e => setCount(Math.min(Math.max(1, Number(e.target.value)||1), Math.max(1, remaining)))} />
-  <button className="btn-primary" disabled={!account || txBusy || remaining===0 || notStarted} onClick={participate}>{t('participate')}</button>
+    <input
+      className="amount-input"
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      placeholder="1"
+      value={countStr}
+      onChange={e => {
+        const v = e.target.value
+        // 仅允许数字与空串（便于删除重输）
+        if (/^\d*$/.test(v)) setCountStr(v)
+      }}
+      onBlur={() => {
+        // 失焦时进行范围归一：空串 -> 1；并限制在 [1, remaining]
+        let v = count
+        if (v < 1) v = 1
+        if (v > Math.max(1, remaining)) v = Math.max(1, remaining)
+        setCountStr(String(v))
+      }}
+    />
+  <button className="btn-primary" disabled={!account || txBusy || remaining===0 || notStarted || count<1 || count>remaining} onClick={participate}>{t('participate')}</button>
         <button disabled={!canRefund || txBusy} onClick={refund}>{t('refund')}</button>
         <button disabled={txBusy || !isReadyToDraw} title={!isReadyToDraw ? drawStatusMessage() : undefined} onClick={tryDraw}>{t('tryDraw')}</button>
       </div>
