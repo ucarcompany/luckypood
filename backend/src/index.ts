@@ -1,3 +1,4 @@
+import 'dotenv/config'; // 加载 .env 环境变量，方便通过文件配置 BASE_URL / 目录等
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -51,6 +52,8 @@ const upload = multer({
 // Express app
 const app = express();
 app.disable('x-powered-by');
+// 部署在 Nginx 反向代理之后，启用 trust proxy，避免 express-rate-limit 关于 X-Forwarded-For 的告警
+app.set('trust proxy', true);
 // Helmet with relaxed CORP/COEP so that images/JSON can be embedded across LAN origins
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
