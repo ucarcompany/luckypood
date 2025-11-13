@@ -504,17 +504,18 @@ export function usePools() {
   const load = useCallback(async () => loadImpl({ silent: false }), [loadImpl])
   const refreshSilent = useCallback(async () => loadImpl({ silent: true }), [loadImpl])
 
-  // 页面进入后立即安排一个“主动刷新按钮等价”的快速二次加载，无论 provider 是否已就绪。
-  // 实现：先触发初始 load()（已有逻辑在 ActivityList 中），这里再在挂载后排一个 0ms 的二次非静默加载；
-  // 若 provider 尚未就绪，loadImpl 会自动重试；若已就绪则快速返回数据，等同用户点了刷新。
+  // 去掉立即二次“非静默”刷新，避免过度频繁；改为：当 provider 就绪且当前列表里仍存在占位元数据时，触发一次静默刷新补齐。
+  const placeholderFixTriggered = useRef(false)
   useEffect(() => {
-    const t = setTimeout(() => {
-      if (!loadingRef.current) {
-        loadImpl({ silent: false })
-      }
-    }, 0)
-    return () => clearTimeout(t)
-  }, [loadImpl])
+    if (!readProvider) return
+    if (placeholderFixTriggered.current) return
+    // 若当前已加载的池全部都有非 placeholder 元数据则无需补齐
+    const hasPlaceholder = pools.some(p => !p.meta || p.meta.__src === 'placeholder')
+    if (hasPlaceholder) {
+      placeholderFixTriggered.current = true
+      setTimeout(() => { loadImpl({ silent: true }) }, 150) // 小延迟避免与首次加载并发抢占
+    }
+  }, [readProvider, pools, loadImpl])
 
   // 对外暴露：walletProvider 用于需要签名的交互；只读当前 RPC URL 供 UI 显示与调试
   return { provider: walletProvider, readProvider, currentRpcUrl, pools, loading, error, errorKind, load, refreshSilent, refreshing, totalPools, cancelledCount, hiddenCount }
