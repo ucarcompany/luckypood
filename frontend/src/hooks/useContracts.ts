@@ -68,6 +68,8 @@ export function usePools() {
   const [totalPools, setTotalPools] = useState(0)
   const [cancelledCount, setCancelledCount] = useState(0)
   const [hiddenCount, setHiddenCount] = useState(0)
+  // 记录：是否在 provider 尚未就绪时已经尝试过一次首屏加载（用于 provider 就绪后自动再发起一次真正的加载）
+  const autoRetryPendingRef = useRef(false)
 
   const rewriteToBackendOrigin = (uri?: string | null) => {
     // 仅在 URI 属于私网/localhost 或为站点内相对路径时，才重写到 BACKEND_URL；
@@ -181,6 +183,13 @@ export function usePools() {
     // 在静默刷新阶段执行健康优选（第二层回退逻辑）
     if (opts?.silent) {
       await ensureReadProvider(false)
+    } else {
+      // 首次/主动刷新时也进行一次健康检测，避免等待 effect 中的扫描完成导致初次列表迟迟不出现
+      if (attempt === 0) {
+        await ensureReadProvider(true)
+      } else {
+        await ensureReadProvider(false)
+      }
     }
     if (!FACTORY_ADDRESS) {
       if (!opts?.silent) {
@@ -199,6 +208,8 @@ export function usePools() {
           if (attempt >= 5) { setError('provider_final_hint'); setErrorKind('final') }
           else { setError('provider_initializing'); setErrorKind('init') }
         }
+        // 标记：我们已经进行过一次主动首屏加载，但当时 provider 不可用；待 provider 建好后自动再触发一次
+        if (attempt === 0) autoRetryPendingRef.current = true
       }
       // 300ms 后重试；限制最大尝试次数，避免潜在无限循环
       if (attempt < 5) setTimeout(()=>{ loadImpl({ silent: opts?.silent, _attempt: attempt+1 }) }, 300)
@@ -241,26 +252,29 @@ export function usePools() {
         return logs
       }
 
-      // 1) read PoolCreated logs from Factory to get metadataURI & sortOrder（采用分段批量）
-  let metaByPool: Record<string,{metadataURI?:string, sortOrder?:number, indexURI?: string}> = {}
-      try {
-        const iface = new Interface(FactoryArtifact.abi)
-        const eventFrag = iface.getEvent('PoolCreated')
-        const topic0 = (eventFrag as any).topicHash || (eventFrag as any).topic || (iface as any).getEventTopic?.('PoolCreated')
-        const startBlock = FACTORY_DEPLOY_BLOCK || 0
-  const logs = await getLogsBatched(readProv, { address: FACTORY_ADDRESS, topics: [topic0] }, { fromBlock: startBlock })
-        for (const log of logs) {
-          const parsed = iface.parseLog({ topics: log.topics, data: log.data })
-          if (parsed && parsed.args) {
-            const pool = String(parsed.args[0]).toLowerCase()
-            const metadataURI0 = String(parsed.args[3] || '')
-            const metadataURI = rewriteToBackendOrigin(metadataURI0)
-            const sortOrder = Number(parsed.args[4])
-            metaByPool[pool] = { metadataURI, sortOrder }
+      // 1) 读取 Factory 的 PoolCreated 日志以获得 metadataURI 与 sortOrder。
+      //    为了加速首屏，非静默加载时跳过该重操作，改由后续的静默刷新补齐。
+      let metaByPool: Record<string,{metadataURI?:string, sortOrder?:number, indexURI?: string}> = {}
+      if (opts?.silent) {
+        try {
+          const iface = new Interface(FactoryArtifact.abi)
+          const eventFrag = iface.getEvent('PoolCreated')
+          const topic0 = (eventFrag as any).topicHash || (eventFrag as any).topic || (iface as any).getEventTopic?.('PoolCreated')
+          const startBlock = FACTORY_DEPLOY_BLOCK || 0
+          const logs = await getLogsBatched(readProv, { address: FACTORY_ADDRESS, topics: [topic0] }, { fromBlock: startBlock })
+          for (const log of logs) {
+            const parsed = iface.parseLog({ topics: log.topics, data: log.data })
+            if (parsed && parsed.args) {
+              const pool = String(parsed.args[0]).toLowerCase()
+              const metadataURI0 = String(parsed.args[3] || '')
+              const metadataURI = rewriteToBackendOrigin(metadataURI0)
+              const sortOrder = Number(parsed.args[4])
+              metaByPool[pool] = { metadataURI, sortOrder }
+            }
           }
+        } catch (e) {
+          console.warn('read PoolCreated logs failed', e)
         }
-      } catch (e) {
-        console.warn('read PoolCreated logs failed', e)
       }
 
   // 1.5) 后端索引兜底：尝试读取 BACKEND_URL/meta/index.json；若不存在则读 BACKEND_URL/api/meta/index
@@ -475,11 +489,32 @@ export function usePools() {
       if (!opts?.silent) setLoading(false)
       else setRefreshing(false)
       loadingRef.current = false
+      // 这里不再立即触发二次静默刷新，避免用户感知到的“首屏长时间等待”；如需补齐排序，可在用户主动点击刷新或 60 秒定时器中完成。
     }
   }, [readProvider, walletProvider, ensureReadProvider, error, pools])
 
+  // provider 一旦就绪且之前记录了“首屏在 provider 未就绪时失败”，并且仍没有任何池数据，则自动再执行一次正常加载（等同用户点右下角刷新）
+  useEffect(() => {
+    if (readProvider && autoRetryPendingRef.current && pools.length === 0 && !loadingRef.current) {
+      autoRetryPendingRef.current = false
+      loadImpl({ silent: false })
+    }
+  }, [readProvider, pools.length, loadImpl])
+
   const load = useCallback(async () => loadImpl({ silent: false }), [loadImpl])
   const refreshSilent = useCallback(async () => loadImpl({ silent: true }), [loadImpl])
+
+  // 页面进入后立即安排一个“主动刷新按钮等价”的快速二次加载，无论 provider 是否已就绪。
+  // 实现：先触发初始 load()（已有逻辑在 ActivityList 中），这里再在挂载后排一个 0ms 的二次非静默加载；
+  // 若 provider 尚未就绪，loadImpl 会自动重试；若已就绪则快速返回数据，等同用户点了刷新。
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (!loadingRef.current) {
+        loadImpl({ silent: false })
+      }
+    }, 0)
+    return () => clearTimeout(t)
+  }, [loadImpl])
 
   // 对外暴露：walletProvider 用于需要签名的交互；只读当前 RPC URL 供 UI 显示与调试
   return { provider: walletProvider, readProvider, currentRpcUrl, pools, loading, error, errorKind, load, refreshSilent, refreshing, totalPools, cancelledCount, hiddenCount }
