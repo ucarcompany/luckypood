@@ -150,8 +150,12 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
       onRefresh?.()
     } catch (e: any) {
       console.error(e)
-      setStatus(e?.message || String(e))
-      toast.show(e?.message || String(e), 'error')
+      const raw = e?.message || String(e)
+      const friendly = /Transaction failed|could not coalesce/i.test(raw) || e?.code === 'UNKNOWN_ERROR'
+        ? '实在抱歉，小水滴正在努力搬运区块与区块链对接信息中，请您耐心等待，预计1~2分钟完成信息对接哦~\nSorry, the droplets are syncing with blockchain. Please wait about 1-2 minutes and retry.'
+        : raw
+      setStatus(friendly)
+      toast.show(friendly, 'error')
     } finally {
       setTxBusy(false)
     }
@@ -169,7 +173,11 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
       postLog({ type:'refund', pool: info.address, txHash: tx.hash, address: account })
       onRefresh?.()
     } catch (e:any) {
-      console.error(e); const msg = e?.message || String(e); toast.show(msg, 'error')
+      console.error(e); const raw = e?.message || String(e)
+      const friendly = /Transaction failed|could not coalesce/i.test(raw) || e?.code === 'UNKNOWN_ERROR'
+        ? '实在抱歉，小水滴正在努力搬运区块与区块链对接信息中，请您耐心等待，预计1~2分钟完成信息对接哦~\nSorry, the droplets are syncing with blockchain. Please wait about 1-2 minutes and retry.'
+        : raw
+      toast.show(friendly, 'error')
     } finally { setTxBusy(false) }
   }
 
@@ -204,7 +212,11 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
       postLog({ type:'tryDraw', pool: info.address, txHash: tx.hash, address: account || undefined })
       onRefresh?.()
     } catch (e:any) {
-      console.error(e); toast.show(drawStatusMessage(), 'error')
+      console.error(e); const raw = e?.message || String(e)
+      const friendly = /Transaction failed|could not coalesce/i.test(raw) || e?.code === 'UNKNOWN_ERROR'
+        ? '实在抱歉，小水滴正在努力搬运区块与区块链对接信息中，请您耐心等待，预计1~2分钟完成信息对接哦~\nSorry, the droplets are syncing with blockchain. Please wait about 1-2 minutes and retry.'
+        : drawStatusMessage()
+      toast.show(friendly, 'error')
     } finally { setTxBusy(false) }
   }
 
