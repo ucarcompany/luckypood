@@ -150,10 +150,15 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
       onRefresh?.()
     } catch (e: any) {
       console.error(e)
-      const raw = e?.message || String(e)
-      const friendly = /Transaction failed|could not coalesce/i.test(raw) || e?.code === 'UNKNOWN_ERROR'
-        ? '实在抱歉，小水滴正在努力搬运区块与区块链对接信息中，请您耐心等待，预计1~2分钟完成信息对接哦~\nSorry, the droplets are syncing with blockchain. Please wait about 1-2 minutes and retry.'
-        : raw
+      const raw = e?.shortMessage || e?.reason || e?.message || String(e)
+      let friendly = raw
+      if (/user denied|rejected|denied/i.test(raw)) {
+        friendly = '您已取消交易\nYou cancelled the transaction.'
+      } else if (/Transaction failed|could not coalesce/i.test(raw) || e?.code === 'UNKNOWN_ERROR') {
+        friendly = '实在抱歉，小水滴正在努力搬运区块与区块链对接信息中，请您耐心等待，预计1~2分钟完成信息对接哦~\nSorry, the droplets are syncing with blockchain. Please wait about 1-2 minutes and retry.'
+      } else if (/bal|insufficient|exceeds balance|transfer amount exceeds balance/i.test(raw)) {
+        friendly = '余额不足，请先准备足够的稳定币再试~\nInsufficient token balance. Please top up the stablecoin and retry.'
+      }
       setStatus(friendly)
       toast.show(friendly, 'error')
     } finally {
@@ -173,10 +178,15 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
       postLog({ type:'refund', pool: info.address, txHash: tx.hash, address: account })
       onRefresh?.()
     } catch (e:any) {
-      console.error(e); const raw = e?.message || String(e)
-      const friendly = /Transaction failed|could not coalesce/i.test(raw) || e?.code === 'UNKNOWN_ERROR'
-        ? '实在抱歉，小水滴正在努力搬运区块与区块链对接信息中，请您耐心等待，预计1~2分钟完成信息对接哦~\nSorry, the droplets are syncing with blockchain. Please wait about 1-2 minutes and retry.'
-        : raw
+      console.error(e); const raw = e?.shortMessage || e?.reason || e?.message || String(e)
+      let friendly = raw
+      if (/user denied|rejected|denied/i.test(raw)) {
+        friendly = '您已取消交易\nYou cancelled the transaction.'
+      } else if (/Transaction failed|could not coalesce/i.test(raw) || e?.code === 'UNKNOWN_ERROR') {
+        friendly = '实在抱歉，小水滴正在努力搬运区块与区块链对接信息中，请您耐心等待，预计1~2分钟完成信息对接哦~\nSorry, the droplets are syncing with blockchain. Please wait about 1-2 minutes and retry.'
+      } else if (/bal|insufficient|exceeds balance|transfer amount exceeds balance/i.test(raw)) {
+        friendly = '余额不足，请先准备足够的稳定币再试~\nInsufficient token balance. Please top up the stablecoin and retry.'
+      }
       toast.show(friendly, 'error')
     } finally { setTxBusy(false) }
   }
@@ -212,10 +222,15 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
       postLog({ type:'tryDraw', pool: info.address, txHash: tx.hash, address: account || undefined })
       onRefresh?.()
     } catch (e:any) {
-      console.error(e); const raw = e?.message || String(e)
-      const friendly = /Transaction failed|could not coalesce/i.test(raw) || e?.code === 'UNKNOWN_ERROR'
-        ? '实在抱歉，小水滴正在努力搬运区块与区块链对接信息中，请您耐心等待，预计1~2分钟完成信息对接哦~\nSorry, the droplets are syncing with blockchain. Please wait about 1-2 minutes and retry.'
-        : drawStatusMessage()
+      console.error(e); const raw = e?.shortMessage || e?.reason || e?.message || String(e)
+      let friendly = drawStatusMessage()
+      if (/user denied|rejected|denied/i.test(raw)) {
+        friendly = '您已取消交易\nYou cancelled the transaction.'
+      } else if (/Transaction failed|could not coalesce/i.test(raw) || e?.code === 'UNKNOWN_ERROR') {
+        friendly = '实在抱歉，小水滴正在努力搬运区块与区块链对接信息中，请您耐心等待，预计1~2分钟完成信息对接哦~\nSorry, the droplets are syncing with blockchain. Please wait about 1-2 minutes and retry.'
+      } else if (/bal|insufficient|exceeds balance|transfer amount exceeds balance/i.test(raw)) {
+        friendly = '余额不足，请先准备足够的稳定币再试~\nInsufficient token balance. Please top up the stablecoin and retry.'
+      }
       toast.show(friendly, 'error')
     } finally { setTxBusy(false) }
   }

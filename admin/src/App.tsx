@@ -95,13 +95,7 @@ export default function App(){
     try {
       const eth = await waitForProvider(3000)
       if (!eth) return alert('未检测到钱包扩展（OKX/MetaMask）。请确认扩展允许该站点访问，并刷新页面后重试。')
-      // 使用 ethers v6 的 BrowserProvider
-      const p: any = new BrowserProvider(eth)
-  setProvider(p)
-  setReadProvider(p)
-      const accs = await (eth as any).request({ method: 'eth_requestAccounts' })
-      setAccount(accs[0] ?? null)
-      // 可选：自动切到 BSC Testnet（0x61）
+      // 先处理链切换，再创建 BrowserProvider，避免 ethers 在创建后链切换导致 "network changed" 错误
       try {
         const cid = await (eth as any).request({ method: 'eth_chainId' })
         if (cid !== '0x61') {
@@ -121,6 +115,13 @@ export default function App(){
           }
         }
       } catch {}
+      // 等待钱包内部完成网络切换再实例化 provider
+      await new Promise(res => setTimeout(res, 200))
+      const p: any = new BrowserProvider(eth)
+      setProvider(p)
+      setReadProvider(p)
+      const accs = await (eth as any).request({ method: 'eth_requestAccounts' })
+      setAccount(accs[0] ?? null)
     } catch (e: any) {
       console.error(e)
       alert(e?.message || String(e))
@@ -393,16 +394,38 @@ export default function App(){
   if (min <= 0n) { setBusy(false); alert(`最小池子金额无效（解析后为 ${min} ）`); return }
   if (max <= min) { setBusy(false); alert(`最大池子金额必须大于最小金额。当前最小 ${min} 最大 ${max}`); return }
       // 预检：静态调用 & Gas 估算（捕获权限或配置导致的回退）
-      try {
+      const doPreflight = async () => {
         await (factory as any).createPool.staticCall({ minFill: min, maxFill: max, metadataURI, sortOrder })
-        // 可选 gas 估算 （有些钱包对 estimate 的 revert 信息更清晰）
         await (factory as any).createPool.estimateGas({ minFill: min, maxFill: max, metadataURI, sortOrder }).catch(()=>{})
+      }
+      try {
+        await doPreflight()
       } catch (preErr: any) {
-        console.error('createPool preflight error', preErr)
-        const msg = preErr?.shortMessage || preErr?.message || String(preErr)
-        alert('预检失败，交易未发送：'+ msg)
-        setBusy(false)
-        return
+        // 针对 "network changed" / 链切换后 provider 失效做一次自动恢复重试
+        const msgRaw = preErr?.shortMessage || preErr?.message || String(preErr)
+        if (/network changed/i.test(msgRaw)) {
+          try {
+            const eth = await waitForProvider(2000)
+            if (eth) {
+              const p: any = new BrowserProvider(eth)
+              setProvider(p)
+              setReadProvider(p)
+              const signer2 = await p.getSigner()
+              const factory2 = new Contract(FACTORY_ADDRESS, FactoryArtifact.abi, signer2)
+              await (factory2 as any).createPool.staticCall({ minFill: min, maxFill: max, metadataURI, sortOrder })
+            }
+          } catch (retryErr: any) {
+            console.error('createPool preflight retry failed', retryErr)
+            alert('预检失败，可能刚刚发生了链切换。请稍候 3-5 秒再次尝试。原始信息：'+ msgRaw)
+            setBusy(false)
+            return
+          }
+        } else {
+          console.error('createPool preflight error', preErr)
+          alert('预检失败，交易未发送：'+ msgRaw)
+          setBusy(false)
+          return
+        }
       }
       const tx = await factory.createPool({ minFill: min, maxFill: max, metadataURI, sortOrder })
       const receipt = await tx.wait()
