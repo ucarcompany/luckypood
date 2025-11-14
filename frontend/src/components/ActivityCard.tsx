@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useWeb3 } from '../web3'
 import PoolArtifact from '@abi/LuckyPool.json'
 import type { PoolInfo } from '../hooks/useContracts'
+import Chat from './Chat'
 import { useToast } from './ToastProvider'
 import { postLog } from '../lib/log'
 import { DEFAULT_RPC, BACKEND_URL } from '../config'
@@ -208,6 +209,16 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
     // 兜底：请求中或其他合约限制
     return t('draw_msg_generic')
   }
+
+  const extractPeriod = (title?: string): number | null => {
+    if (!title) return null
+    const zh = /第\s*(\d+)\s*期/.exec(title)
+    if (zh) return Number(zh[1])
+    const en = /Period\s*(\d+)/i.exec(title)
+    if (en) return Number(en[1])
+    return null
+  }
+  const period = extractPeriod(info.meta?.title)
 
   const tryDraw = async () => {
     if (!provider) return
@@ -415,8 +426,18 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
   <div style={{marginTop:6, fontSize:12, color:'#555'}}>{t('your_ticket_range')}：{ticketRange.start} - {ticketRange.end}</div>
       )}
       {info.winner && info.winner !== '0x0000000000000000000000000000000000000000' && (
-        <div style={{marginTop:8}}>{t('winner')}：{info.winner.slice(0,6)}...{info.winner.slice(-4)}</div>
+        <div style={{marginTop:12, borderRadius:12, padding:'16px 18px', color:'#fff', background:'linear-gradient(135deg,#7c3aed,#4338ca,#2563eb,#06b6d4)', boxShadow:'0 8px 24px rgba(2,6,23,.25)'}}>
+          <div style={{fontSize:22, fontWeight:800}}>
+            {(t('winner_banner_title_zh') || '恭喜中奖！')} / {(t('winner_banner_title_en') || 'Congratulations!')}
+          </div>
+          <div style={{marginTop:6, fontSize:14}}>
+            {period!=null && <span>{t('period_label_zh', { n: period })} / {t('period_label_en', { n: period })}</span>}
+            <span style={{marginLeft:period!=null?12:0}}>{t('winner')}：{info.winner.slice(0,6)}...{info.winner.slice(-4)}</span>
+          </div>
+        </div>
       )}
+      {/* 简易聊天模块 */}
+      <Chat pool={info.address} address={account || undefined} />
     </div>
   )
 }

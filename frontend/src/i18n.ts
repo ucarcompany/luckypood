@@ -61,6 +61,20 @@ const resources = {
   draw_msg_pending: 'Randomness request is in progress. Please try again later.',
   draw_msg_generic: 'Not ready to draw yet. Please try again later.'
       ,draw_request_submitted: 'Draw request submitted, view on BscScan'
+      ,winner_banner_title_en: 'Congratulations!'
+      ,winner_banner_sub_en: 'Period {{n}} winner'
+      ,period_label_en: 'Period {{n}}'
+      ,chat_title: 'Customer Support Chat'
+      ,chat_connect: 'Sign to start chat'
+      ,chat_placeholder: 'Say something...'
+      ,chat_send: 'Send'
+      ,transparency_title: 'Transparency'
+      ,transparency_total_participations: 'Total participations'
+      ,transparency_total_rewards: 'Total rewards distributed'
+      ,transparency_current_pools: 'Ongoing activities'
+      ,transparency_treasury: 'Treasury address'
+      ,transparency_last_sync: 'Last sync'
+      ,transparency_randomness_brief: 'Randomness provided by Chainlink VRF v2 on BNB Chain Testnet'
     }
   },
   zh: {
@@ -122,6 +136,20 @@ const resources = {
   draw_msg_pending: '随机数请求处理中，请稍后重试。',
   draw_msg_generic: '当前还不能开奖，请稍后再试。'
       ,draw_request_submitted: '已提交开奖请求，点击查看 BscScan'
+      ,winner_banner_title_zh: '恭喜中奖！'
+      ,winner_banner_sub_zh: '第 {{n}} 期 中奖者'
+      ,period_label_zh: '第 {{n}} 期'
+      ,chat_title: '客服聊天'
+      ,chat_connect: '签名登录以开始聊天'
+      ,chat_placeholder: '说点什么...'
+      ,chat_send: '发送'
+      ,transparency_title: '透明度'
+      ,transparency_total_participations: '总参与次数'
+      ,transparency_total_rewards: '总奖励已发放'
+      ,transparency_current_pools: '当前进行中活动'
+      ,transparency_treasury: '资金合约地址'
+      ,transparency_last_sync: '最后同步时间'
+      ,transparency_randomness_brief: '随机性由 BNB Chain Testnet 上的 Chainlink VRF v2 提供'
     }
   }
 }

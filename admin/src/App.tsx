@@ -472,6 +472,7 @@ export default function App(){
   }
 
   const [syncing, setSyncing] = useState(false)
+  const [scanning, setScanning] = useState(false)
   const syncIndex = async () => {
     if (!readProvider || !FACTORY_ADDRESS) return alert('缺少只读Provider或FACTORY地址')
     setSyncing(true)
@@ -498,6 +499,19 @@ export default function App(){
       alert(`索引同步完成：成功 ${ok} 条，失败 ${fail} 条`)
     } catch (e:any) { console.error(e); alert(e?.message || String(e)) }
     finally { setSyncing(false) }
+  }
+
+  const scanAndRepair = async () => {
+    setScanning(true)
+    try {
+      const headers: Record<string,string> = {}
+      { const dynKey = getApiKey(); if (dynKey) headers['x-api-key'] = dynKey }
+      const r = await fetch(`${BACKEND_URL}/api/meta/scan?repair=1`, { headers })
+      const j = await r.json().catch(()=>null)
+      if (!r.ok) throw new Error(j?.error || 'scan_failed')
+      alert(`扫描完成：检查 ${j?.checked ?? 0} 条，损坏 ${j?.broken ?? 0} 条，已回退修复 ${j?.repaired ?? 0} 条`)
+    } catch (e:any) { alert(e?.message || String(e)) }
+    finally { setScanning(false) }
   }
 
   // 批量为所有池创建/刷新稳定别名 meta/<pool>.json
@@ -582,6 +596,7 @@ export default function App(){
           )}
           <button style={{marginLeft:8}} onClick={loadPools}>刷新列表</button>
           <button style={{marginLeft:8}} disabled={syncing} onClick={syncIndex}>{syncing ? '同步中...' : '一键修复索引'}</button>
+          <button style={{marginLeft:8}} disabled={scanning} onClick={scanAndRepair}>{scanning ? '扫描中...' : '扫描/自动修复别名'}</button>
           <button style={{marginLeft:8}} disabled={aliasing} onClick={aliasAll}>{aliasing ? '别名中...' : '一键生成别名'}</button>
           {PASS_HASH_ENV && <button style={{marginLeft:8}} onClick={logout}>退出登录</button>}
         </div>
@@ -696,6 +711,7 @@ export default function App(){
       )}
 
       <IndexManager />
+      <CloneTool />
       <MetaFixer />
       </>
       )}
@@ -855,6 +871,60 @@ function MetaFixer(){
       </div>
       <div style={{marginTop:10}}>
         <button disabled={busy} onClick={doRun}>{busy ? '处理中...' : '生成并写入索引'}</button>
+      </div>
+    </div>
+  )
+}
+
+// ====== 下一期：克隆元数据到新池别名 ======
+function CloneTool(){
+  const backend = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000').trim()
+  const apiKeyEnv = (import.meta.env.VITE_BACKEND_API_KEY || '').trim()
+  const getApiKey = () => {
+    const k = (localStorage.getItem('admin_api_key') || apiKeyEnv || '').trim()
+    return /^[\x20-\x7E]*$/.test(k) ? k : ''
+  }
+  const [fromPool, setFromPool] = useState('')
+  const [toPool, setToPool] = useState('')
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [image, setImage] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const run = async () => {
+    if (!fromPool || !toPool) return alert('请输入来源与目标池地址')
+    setBusy(true)
+    try {
+      const headers: Record<string,string> = { 'Content-Type':'application/json' }
+      { const dyn = getApiKey(); if (dyn) headers['x-api-key'] = dyn }
+      const replacements: any = {}
+      if (title) replacements.title = title
+      if (description) replacements.description = description
+      if (image) replacements.image = image
+      const r = await fetch(`${backend}/api/meta/clone`, { method:'POST', headers, body: JSON.stringify({ fromPool, toPool, replacements }) })
+      const j = await r.json().catch(()=>null)
+      if (!r.ok || !j?.ok) throw new Error(j?.error || 'clone_failed')
+      alert('已克隆到新池别名并更新索引：\n' + j.alias)
+    } catch (e:any) { alert(e?.message || String(e)) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card" style={{marginTop:16}}>
+      <h3>下一期：克隆元数据到新池别名</h3>
+      <div className="row">
+        <input style={{flex:1}} placeholder="来源池地址 (上一期)" value={fromPool} onChange={e=>setFromPool(e.target.value.trim())} />
+        <input style={{flex:1}} placeholder="目标池地址 (新创建)" value={toPool} onChange={e=>setToPool(e.target.value.trim())} />
+      </div>
+      <div className="row" style={{marginTop:8}}>
+        <input style={{flex:1}} placeholder="可选：新标题（自动带上期数更佳）" value={title} onChange={e=>setTitle(e.target.value)} />
+        <input style={{flex:1}} placeholder="可选：新描述" value={description} onChange={e=>setDescription(e.target.value)} />
+      </div>
+      <div className="row" style={{marginTop:8}}>
+        <input style={{flex:1}} placeholder="可选：新图片 URL（不填则沿用上一期）" value={image} onChange={e=>setImage(e.target.value)} />
+      </div>
+      <div style={{marginTop:10}}>
+        <button disabled={busy} onClick={run}>{busy ? '处理中...' : '克隆并写入索引'}</button>
       </div>
     </div>
   )

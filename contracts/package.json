@@ -16,7 +16,8 @@
     "vrf:check": "hardhat run --network bscTestnet scripts/vrf-check.js"
     ,"link:balance": "hardhat run --network bscTestnet scripts/link-balance.js",
     "pool:participants": "node scripts/pool-participants.js",
-    "pool:refund": "node scripts/refund-multisend.js"
+    "pool:refund": "node scripts/refund-multisend.js",
+    "token:mint": "hardhat run --network bscTestnet scripts/mint-mock.js"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

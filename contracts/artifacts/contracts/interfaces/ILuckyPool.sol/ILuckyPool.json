@@ -55,6 +55,11 @@
               "type": "bool"
             },
             {
+              "internalType": "bool",
+              "name": "cancelled",
+              "type": "bool"
+            },
+            {
               "internalType": "uint32",
               "name": "totalTickets",
               "type": "uint32"

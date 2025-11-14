@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "E:\\Lucky-pool\\contracts\\contracts\\interfaces\\ILuckyPool.sol": {
-      "lastModificationDate": 1762014767433,
-      "contentHash": "6170ed9912986abc732de2fb40a7b1b1",
+      "lastModificationDate": 1762030678615,
+      "contentHash": "825f4e7fa94b3c00b62a9de3bb4ac05f",
       "sourceName": "contracts/interfaces/ILuckyPool.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -79,8 +79,8 @@
       ]
     },
     "E:\\Lucky-pool\\contracts\\contracts\\LuckyPool.sol": {
-      "lastModificationDate": 1762016024773,
-      "contentHash": "a9e11b2c22492a80adb9fc2f1a7f9dfe",
+      "lastModificationDate": 1762030678666,
+      "contentHash": "6bd93213304e3e912629dec2e80a1460",
       "sourceName": "contracts/LuckyPool.sol",
       "solcConfig": {
         "version": "0.8.20",

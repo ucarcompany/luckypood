@@ -9,6 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import http from 'http';
 import https from 'https';
+import { utils as ethersUtils } from 'ethers';
 // Use ethers v5 imports
 // 注意：已撤回链上聚合 /api/pools 端点，移除 ethers 相关依赖（若未来需要再恢复）。
 
@@ -375,6 +376,292 @@ app.post('/api/meta/alias', requireApiKey, async (req, res) => {
   }
 })
 
+// ---- Index scanning and auto-repair for alias stability ----
+type ScanIssue = {
+  pool: string
+  uri?: string
+  reason: 'missing_uri' | 'fetch_failed' | 'invalid_json' | 'exception'
+  status?: number
+}
+
+async function tryReadJsonFile(p: string): Promise<any|null> {
+  try {
+    const txt = await fs.promises.readFile(p, 'utf-8')
+    const j = JSON.parse(txt)
+    if (j && typeof j === 'object') return j
+    return null
+  } catch { return null }
+}
+
+async function writeScanLog(lines: any[]) {
+  try {
+    const d = new Date()
+    const file = path.join(LOG_DIR, `scan-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}.jsonl`)
+    for (const l of lines) {
+      await fs.promises.appendFile(file, JSON.stringify({ ts: Math.floor(Date.now()/1000), ...l }) + '\n', 'utf-8')
+    }
+  } catch {/* ignore */}
+}
+
+// 扫描 index.json，检测损坏条目；可选自动回退到别名文件
+async function scanAndMaybeRepairIndex(opts: { repair: boolean }): Promise<{
+  checked: number
+  broken: number
+  repaired: number
+  issues: ScanIssue[]
+  repairs: { pool: string; alias: string }[]
+}> {
+  const base = new URL(BASE_URL)
+  const idx = await readIndex()
+  const entries = Object.entries(idx)
+  const issues: ScanIssue[] = []
+  const repairs: { pool: string; alias: string }[] = []
+  let broken = 0
+  let repaired = 0
+  for (const [pool, uri] of entries) {
+    const lower = String(pool).toLowerCase()
+    if (!uri) {
+      issues.push({ pool: lower, reason: 'missing_uri' })
+      broken++
+      // 尝试回退别名
+      if (opts.repair) {
+        const aliasPath = path.join(METADATA_DIR, `${lower}.json`)
+        const j = await tryReadJsonFile(aliasPath)
+        if (j) {
+          const aliasUri = `${base.origin}/meta/${lower}.json`
+          const idx2 = await readIndex(); idx2[lower] = aliasUri; await writeIndex(idx2)
+          repairs.push({ pool: lower, alias: aliasUri })
+          repaired++
+        }
+      }
+      continue
+    }
+    try {
+      const r = await fetch(String(uri))
+      if (!r.ok) {
+        issues.push({ pool: lower, uri: String(uri), reason: 'fetch_failed', status: r.status })
+        broken++
+        if (opts.repair) {
+          const aliasPath = path.join(METADATA_DIR, `${lower}.json`)
+          const j = await tryReadJsonFile(aliasPath)
+          if (j) {
+            const aliasUri = `${base.origin}/meta/${lower}.json`
+            const idx2 = await readIndex(); idx2[lower] = aliasUri; await writeIndex(idx2)
+            repairs.push({ pool: lower, alias: aliasUri })
+            repaired++
+          }
+        }
+        continue
+      }
+      const j = await r.json().catch(()=>null)
+      if (!j || typeof j !== 'object') {
+        issues.push({ pool: lower, uri: String(uri), reason: 'invalid_json' })
+        broken++
+        if (opts.repair) {
+          const aliasPath = path.join(METADATA_DIR, `${lower}.json`)
+          const j2 = await tryReadJsonFile(aliasPath)
+          if (j2) {
+            const aliasUri = `${base.origin}/meta/${lower}.json`
+            const idx2 = await readIndex(); idx2[lower] = aliasUri; await writeIndex(idx2)
+            repairs.push({ pool: lower, alias: aliasUri })
+            repaired++
+          }
+        }
+      }
+      // ok 情况无需处理
+    } catch (e) {
+      issues.push({ pool: lower, uri: String(uri), reason: 'exception' })
+      broken++
+      if (opts.repair) {
+        const aliasPath = path.join(METADATA_DIR, `${lower}.json`)
+        const j = await tryReadJsonFile(aliasPath)
+        if (j) {
+          const aliasUri = `${base.origin}/meta/${lower}.json`
+          const idx2 = await readIndex(); idx2[lower] = aliasUri; await writeIndex(idx2)
+          repairs.push({ pool: lower, alias: aliasUri })
+          repaired++
+        }
+      }
+    }
+  }
+  if (issues.length>0 || repairs.length>0) {
+    await writeScanLog([{ summary: { checked: entries.length, broken, repaired } }, ...issues.map(i=>({ issue: i })), ...repairs.map(r=>({ repair: r }))])
+  }
+  return { checked: entries.length, broken, repaired, issues, repairs }
+}
+
+// 管理端扫描接口：GET /api/meta/scan?repair=1  可触发自动回退修复
+const scanMetaHandler: express.RequestHandler = async (req, res) => {
+  try {
+    const repair = (String((req.query as any).repair||'0') === '1' || String((req.query as any).repair||'').toLowerCase() === 'true')
+    const result = await scanAndMaybeRepairIndex({ repair })
+    return res.json({ ok: true, repair, ...result }) as any
+  } catch (e) {
+    console.error(e)
+    return res.status(500).json({ error: 'internal_error' }) as any
+  }
+}
+;(app.get as any)('/api/meta/scan', scanMetaHandler as any)
+
+// 启动时与每小时定期扫描一次（自动修复）
+(async () => {
+  try {
+    const first = await scanAndMaybeRepairIndex({ repair: true })
+    if (first.broken>0) console.log(`Index scan at start: broken=${first.broken}, repaired=${first.repaired}`)
+  } catch (e) { console.warn('initial scan failed:', e) }
+  setInterval(async () => {
+    try {
+      const r = await scanAndMaybeRepairIndex({ repair: true })
+      if (r.broken>0 || r.repaired>0) console.log(`Index hourly scan: broken=${r.broken}, repaired=${r.repaired}`)
+    } catch (e) { console.warn('hourly scan failed:', e) }
+  }, 60 * 60 * 1000)
+})()
+
+// 按照已有池的元数据克隆，生成新池的别名文件并更新 index
+// POST /api/meta/clone { fromPool, toPool, replacements? }
+app.post('/api/meta/clone', requireApiKey, async (req, res) => {
+  try {
+    const { fromPool, toPool, replacements } = req.body || {}
+    const src = String(fromPool||'').toLowerCase()
+    const dst = String(toPool||'').toLowerCase()
+    if (!/^0x[0-9a-f]{40}$/.test(src) || !/^0x[0-9a-f]{40}$/.test(dst)) return res.status(400).json({ error: 'invalid_pool' })
+    const base = new URL(BASE_URL)
+    // 优先使用别名文件
+    const aliasSrc = path.join(METADATA_DIR, `${src}.json`)
+    let json: any = await tryReadJsonFile(aliasSrc)
+    if (!json) {
+      // 回退到 index 映射
+      const idx = await readIndex(); const uri = idx[src]
+      if (!uri) return res.status(400).json({ error: 'missing_src_uri' })
+      const r = await fetch(uri).catch(()=>null)
+      if (!r || !r.ok) return res.status(400).json({ error: 'fetch_failed' })
+      json = await r.json().catch(()=>null)
+      if (!json || typeof json !== 'object') return res.status(400).json({ error: 'invalid_metadata' })
+    }
+    // 应用替换
+    if (replacements && typeof replacements === 'object') {
+      for (const k of ['title','description','image'] as const) {
+        if (typeof (replacements as any)[k] === 'string' && (replacements as any)[k]) (json as any)[k] = (replacements as any)[k]
+      }
+    }
+    // 写入目标别名
+    const aliasDstPath = path.join(METADATA_DIR, `${dst}.json`)
+    await fs.promises.writeFile(aliasDstPath, JSON.stringify(json, null, 2), 'utf-8')
+    // 更新 index 指向新别名
+    const idx2 = await readIndex();
+    idx2[dst] = `${base.origin}/meta/${dst}.json`
+    await writeIndex(idx2)
+    return res.json({ ok: true, alias: idx2[dst] })
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'internal_error' }) }
+})
+
+// ---- Simple Chat System (short polling, per-pool) ----
+// In-memory auth state (reset on process restart)
+const CHAT_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
+const CHAT_MIN_INTERVAL_MS = 3000
+const chatNonces = new Map<string, { nonce: string; ts: number }>() // addressLower -> {nonce, ts}
+const chatSessions = new Map<string, { token: string; ts: number }>() // addressLower -> {token, issuedAt}
+const chatLastSent = new Map<string, number>() // addressLower -> lastSentTs
+
+function randomToken(len = 32) {
+  return Array.from(crypto.getRandomValues(new Uint8Array(len))).map(b=>b.toString(16).padStart(2,'0')).join('')
+}
+
+function sanitizeMessage(s: string): string {
+  let t = String(s || '')
+  t = t.replace(/[\r\n\t]+/g, ' ')
+  t = t.replace(/[\u0000-\u001f\u007f]/g, '')
+  t = t.trim()
+  if (t.length > 280) t = t.slice(0, 280)
+  return t
+}
+
+// GET /api/chat/nonce?address=0x...
+app.get('/api/chat/nonce', async (req, res) => {
+  try {
+    const address = String(req.query.address || '').toLowerCase()
+    if (!/^0x[0-9a-f]{40}$/.test(address)) return res.status(400).json({ error: 'invalid_address' })
+    const nonce = Math.random().toString(36).slice(2) + Date.now().toString(36)
+    chatNonces.set(address, { nonce, ts: Date.now() })
+    return res.json({ nonce, expireInSec: 300 })
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'internal_error' }) }
+})
+
+// POST /api/chat/auth { address, signature }
+// Client signs the message: `Lucky-pool Chat Login\nAddress: <address_lower>\nNonce: <nonce>`
+app.post('/api/chat/auth', async (req, res) => {
+  try {
+    const { address, signature } = req.body || {}
+    const adr = String(address || '').toLowerCase()
+    if (!/^0x[0-9a-f]{40}$/.test(adr)) return res.status(400).json({ error: 'invalid_address' })
+    const found = chatNonces.get(adr)
+    if (!found) return res.status(400).json({ error: 'nonce_missing' })
+    if (Date.now() - found.ts > 5*60*1000) { chatNonces.delete(adr); return res.status(400).json({ error: 'nonce_expired' }) }
+    const message = `Lucky-pool Chat Login\nAddress: ${adr}\nNonce: ${found.nonce}`
+    let recovered = ''
+    try {
+      recovered = ethersUtils.verifyMessage(message, String(signature||''))
+    } catch { return res.status(400).json({ error: 'invalid_signature' }) }
+    if (recovered.toLowerCase() !== adr) return res.status(400).json({ error: 'address_mismatch' })
+    chatNonces.delete(adr)
+    const token = randomToken(32)
+    chatSessions.set(adr, { token, ts: Date.now() })
+    return res.json({ ok: true, token, ttlSec: CHAT_TOKEN_TTL_MS/1000 })
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'internal_error' }) }
+})
+
+// POST /api/chat/message { pool, address, token, message }
+app.post('/api/chat/message', async (req, res) => {
+  try {
+    const { pool, address, token } = req.body || {}
+    let { message } = req.body || {}
+    const adr = String(address || '').toLowerCase()
+    const poolAddr = String(pool || '').toLowerCase()
+    if (!/^0x[0-9a-f]{40}$/.test(adr)) return res.status(400).json({ error: 'invalid_address' })
+    if (!/^0x[0-9a-f]{40}$/.test(poolAddr)) return res.status(400).json({ error: 'invalid_pool' })
+    message = sanitizeMessage(String(message||''))
+    if (!message) return res.status(400).json({ error: 'empty_message' })
+    const session = chatSessions.get(adr)
+    if (!session || session.token !== String(token||'')) return res.status(401).json({ error: 'unauthorized' })
+    if (Date.now() - session.ts > CHAT_TOKEN_TTL_MS) { chatSessions.delete(adr); return res.status(401).json({ error: 'session_expired' }) }
+    const last = chatLastSent.get(adr) || 0
+    if (Date.now() - last < CHAT_MIN_INTERVAL_MS) return res.status(429).json({ error: 'too_many_requests' })
+    chatLastSent.set(adr, Date.now())
+    const ts = Math.floor(Date.now()/1000)
+    const d = new Date()
+    const file = path.join(LOG_DIR, `chat-${poolAddr}-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}.jsonl`)
+    const line = JSON.stringify({ ts, pool: poolAddr, address: adr, message })
+    await fs.promises.appendFile(file, line + '\n', 'utf-8')
+    return res.json({ ok: true, ts })
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'internal_error' }) }
+})
+
+// GET /api/chat/messages?pool=0x..&since=unix_ts&limit=200
+app.get('/api/chat/messages', async (req, res) => {
+  try {
+    const poolAddr = String(req.query.pool || '').toLowerCase()
+    if (!/^0x[0-9a-f]{40}$/.test(poolAddr)) return res.status(400).json({ error: 'invalid_pool' })
+    const since = Number(req.query.since || 0) || 0
+    const limit = Math.min(Math.max(Number(req.query.limit || 200), 1), 500)
+    const now = new Date()
+    const months = [0, -1].map(delta => {
+      const d = new Date(now.getFullYear(), now.getMonth()+delta, 1)
+      return path.join(LOG_DIR, `chat-${poolAddr}-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}.jsonl`)
+    })
+    const lines: string[] = []
+    for (const f of months) {
+      if (fs.existsSync(f)) {
+        const content = await fs.promises.readFile(f, 'utf-8')
+        lines.push(...content.split(/\r?\n/).filter(Boolean))
+      }
+    }
+    const items = lines.map(l => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
+      .filter((it: any) => !since || (Number(it.ts)||0) > since)
+      .slice(-limit)
+    return res.json({ items })
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'internal_error' }) }
+})
+
 // Append-only log endpoint (JSONL per month)
 app.post('/api/log', requireApiKey, async (req, res) => {
   try {
@@ -417,6 +704,42 @@ app.get('/api/logs', requireApiKey, async (req, res) => {
     return res.json({ items: recent })
   } catch (err) {
     console.error(err)
+    return res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// Public stats endpoint for Transparency page
+app.get('/api/stats', async (_req, res) => {
+  try {
+    const now = new Date()
+    const months = [0, -1].map(delta => {
+      const d = new Date(now.getFullYear(), now.getMonth()+delta, 1)
+      return path.join(LOG_DIR, `activity-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}.jsonl`)
+    })
+    const lines: string[] = []
+    for (const f of months) {
+      if (fs.existsSync(f)) {
+        const content = await fs.promises.readFile(f, 'utf-8')
+        lines.push(...content.split(/\r?\n/).filter(Boolean))
+      }
+    }
+    let totalParticipations = 0
+    let totalRewardPaid = 0
+    for (const l of lines) {
+      try {
+        const j = JSON.parse(l)
+        if (j?.type === 'participate') {
+          const c = Number(j.count||0); if (Number.isFinite(c)) totalParticipations += c
+        }
+        if (j?.type === 'draw' || j?.type === 'DrawFulfilled') {
+          const r = Number(j?.extra?.reward || 0)
+          if (Number.isFinite(r)) totalRewardPaid += r
+        }
+      } catch { /* ignore bad line */ }
+    }
+    return res.json({ totalParticipations, totalRewardPaid, logWindowMonths: 2, lastSync: Math.floor(Date.now()/1000) })
+  } catch (e) {
+    console.error(e)
     return res.status(500).json({ error: 'internal_error' })
   }
 })
