@@ -9,7 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import http from 'http';
 import https from 'https';
-import { utils as ethersUtils } from 'ethers';
+import { utils as ethersUtils, providers as ethersProviders } from 'ethers';
 // Use ethers v5 imports
 // 注意：已撤回链上聚合 /api/pools 端点，移除 ethers 相关依赖（若未来需要再恢复）。
 
@@ -410,6 +410,68 @@ app.post('/api/meta/alias-all', requireApiKey, async (req, res) => {
     }
     await writeIndex(idx)
     return res.json({ ok: true, count: updated.length, items: updated, force })
+  } catch (e) {
+    console.error(e)
+    return res.status(500).json({ error: 'internal_error' })
+  }
+})
+
+// ---- Recover single pool mapping from chain logs and create alias ----
+// POST /api/meta/recover-one { pool, factory?, rpcUrl?, fromBlock? }
+// Defaults: factory=0xCEc46Ff4217feb58937212ca0F71F3Ee6c18FC75 (BSC Testnet), fromBlock=71704665, rpcUrl=prebsc seed
+app.post('/api/meta/recover-one', requireApiKey, async (req, res) => {
+  try {
+    const body = req.body || {}
+    const poolRaw = String(body.pool||'').toLowerCase()
+    if (!/^0x[0-9a-f]{40}$/.test(poolRaw)) return res.status(400).json({ error: 'invalid_pool' })
+    const factory = String(body.factory || '0xCEc46Ff4217feb58937212ca0F71F3Ee6c18FC75')
+    const fromBlock = Number(body.fromBlock || 71704665)
+    const rpcUrl = String(body.rpcUrl || 'https://data-seed-prebsc-1-s1.binance.org:8545/')
+    const provider = new ethersProviders.JsonRpcProvider(rpcUrl)
+    const iface = new ethersUtils.Interface([
+      'event PoolCreated(address indexed pool, uint256 min, uint256 max, string metadataURI, uint256 sortOrder)'
+    ])
+    const topic0 = iface.getEventTopic('PoolCreated')
+    const topic1 = ethersUtils.hexZeroPad(poolRaw, 32)
+    const latest = await provider.getBlockNumber()
+    const step = 5000
+    let foundUri: string | null = null
+    for (let start = fromBlock; start <= latest; start += step) {
+      const end = Math.min(start + step - 1, latest)
+      const logs = await provider.getLogs({
+        address: factory,
+        fromBlock: start,
+        toBlock: end,
+        topics: [topic0, topic1]
+      }).catch(()=>[] as any[])
+      for (const lg of logs) {
+        try {
+          const parsed = iface.parseLog(lg as any)
+          const uri = String(parsed?.args?.metadataURI || '')
+          if (uri) { foundUri = uri; break }
+        } catch { /* ignore */ }
+      }
+      if (foundUri) break
+    }
+    if (!foundUri) return res.status(404).json({ error: 'metadata_uri_not_found' })
+    // upsert index
+    const lower = poolRaw
+    const idx = await readIndex(); idx[lower] = foundUri; await writeIndex(idx)
+    // create alias file and repoint index to alias (same as alias endpoint)
+    let json: any = null
+    try {
+      const r = await fetchWithTimeout(foundUri, 3000)
+      if (r.ok) json = await r.json().catch(()=>null)
+    } catch {}
+    if (json && typeof json === 'object') {
+      const base = new URL(BASE_URL)
+      const aliasPath = path.join(METADATA_DIR, `${lower}.json`)
+      await fs.promises.writeFile(aliasPath, JSON.stringify(json, null, 2), 'utf-8')
+      const aliasUri = `${base.origin}/meta/${lower}.json`
+      const idx2 = await readIndex(); idx2[lower] = aliasUri; await writeIndex(idx2)
+      return res.json({ ok: true, pool: lower, uri: foundUri, alias: aliasUri, recovered: true })
+    }
+    return res.json({ ok: true, pool: lower, uri: foundUri, recovered: true, alias: null })
   } catch (e) {
     console.error(e)
     return res.status(500).json({ error: 'internal_error' })
