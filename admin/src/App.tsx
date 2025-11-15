@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Contract, BrowserProvider, JsonRpcProvider, Interface } from 'ethers'
 function toUnits(input: string, decimals: number): bigint {
   const [ints, fracRaw = ''] = String(input).trim().split('.')
