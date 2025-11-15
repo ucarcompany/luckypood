@@ -796,8 +796,8 @@ app.get('/api/stats', async (_req, res) => {
   }
 })
 
-// Start HTTP server (use Express' built-in listener to avoid accidental app() invocation)
-app.listen(PORT, () => {
+// Start HTTP server (bind on IPv4 to ensure 127.0.0.1 works behind Nginx)
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Lucky-pool backend listening on ${BASE_URL}`);
 });
 
