@@ -32,17 +32,35 @@ export default function SupportChat({ address, open = true, onUnreadChange }: Pr
     try {
       setBusy(true)
       const r1 = await fetch(`${BACKEND_URL}/api/support/nonce?address=${address}`)
-      if (!r1.ok) throw new Error('nonce_failed')
-      const j1 = await parseJsonSafe(r1)
+      let j1: any = null
+      try { j1 = await parseJsonSafe(r1) } catch { /* ignore */ }
+      if (!r1.ok || !j1?.nonce) throw new Error('nonce_failed')
       const nonce = j1.nonce
       const msg = `Lucky-pool Support Chat Login\nAddress: ${address.toLowerCase()}\nNonce: ${nonce}`
       const w: any = (window as any)
       const eth: any = w.ethereum || w.okxwallet?.ethereum || w.okxwallet
       if (!eth) { setErr('未检测到钱包插件'); return }
-      const sig = await eth.request({ method: 'personal_sign', params: [msg, address] })
+      // 兼容不同钱包的 personal_sign 参数顺序/编码差异
+      const toHex = (s: string) => '0x' + Array.from(new TextEncoder().encode(s)).map(b=>b.toString(16).padStart(2,'0')).join('')
+      let sig: string | null = null
+      const attempts: Array<() => Promise<string>> = [
+        // personal_sign 常见参数顺序与编码差异
+        () => eth.request({ method: 'personal_sign', params: [msg, address] }),
+        () => eth.request({ method: 'personal_sign', params: [address, msg] }),
+        () => eth.request({ method: 'personal_sign', params: [toHex(msg), address] }),
+        () => eth.request({ method: 'personal_sign', params: [address, toHex(msg)] }),
+        // eth_sign 作为兜底：大多数钱包已禁用，但尝试以兼容部分实现
+        () => eth.request({ method: 'eth_sign', params: [address, toHex(msg)] }),
+        () => eth.request({ method: 'eth_sign', params: [address, msg] })
+      ]
+      for (const fn of attempts) {
+        try { sig = await fn(); if (sig) break } catch { /* try next */ }
+      }
+      if (!sig) throw new Error('wallet_sign_failed')
       const r2 = await fetch(`${BACKEND_URL}/api/support/auth`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ address, signature: sig }) })
-      if (!r2.ok) throw new Error('auth_failed')
-      const j2 = await parseJsonSafe(r2)
+      let j2: any = null
+      try { j2 = await parseJsonSafe(r2) } catch { /* ignore */ }
+      if (!r2.ok || !j2?.ok) throw new Error(j2?.error || 'auth_failed')
       if (!j2.ok) throw new Error(j2.error || 'auth_failed')
       setToken(j2.token)
       setErr('')

@@ -821,12 +821,36 @@ app.post('/api/support/auth', async (req, res) => {
     if (!found) return res.status(400).json({ error: 'nonce_missing' })
     if (Date.now() - found.ts > 5*60*1000) { supportNonces.delete(adr); return res.status(400).json({ error: 'nonce_expired' }) }
     const message = `Lucky-pool Support Chat Login\nAddress: ${adr}\nNonce: ${found.nonce}`
-    let recovered = ''
-    try { recovered = ethersUtils.verifyMessage(message, String(signature||'')) } catch { return res.status(400).json({ error: 'invalid_signature' }) }
-    if (recovered.toLowerCase() !== adr) return res.status(400).json({ error: 'address_mismatch' })
+    const sig = String(signature||'')
+    const authDebug: any = { stage: 'verify', adr, sigLen: sig.length, ts: Date.now() }
+    const tryRecover = (msg: string): string | null => {
+      try { return ethersUtils.verifyMessage(msg, sig) } catch { return null }
+    }
+    const tryRecoverEthSign = (msg: string): string | null => {
+      try {
+        const digest = ethersUtils.keccak256(ethersUtils.toUtf8Bytes(msg))
+        return ethersUtils.recoverAddress(digest, sig)
+      } catch { return null }
+    }
+    let recovered = tryRecover(message)
+    if (!recovered) {
+      // 兼容 CRLF 换行
+      const alt = message.replace(/\n/g, '\r\n')
+      recovered = tryRecover(alt)
+      if (!recovered) recovered = tryRecoverEthSign(message) || tryRecoverEthSign(alt)
+    }
+    if (!recovered) {
+      try { await fs.promises.appendFile(path.join(LOG_DIR, 'support-auth-debug.jsonl'), JSON.stringify({ ...authDebug, error:'invalid_signature' })+'\n', 'utf-8') } catch {}
+      return res.status(400).json({ error: 'invalid_signature' })
+    }
+    if (recovered.toLowerCase() !== adr) {
+      try { await fs.promises.appendFile(path.join(LOG_DIR, 'support-auth-debug.jsonl'), JSON.stringify({ ...authDebug, error:'address_mismatch', recovered })+'\n', 'utf-8') } catch {}
+      return res.status(400).json({ error: 'address_mismatch' })
+    }
     supportNonces.delete(adr)
     const token = randomToken(32)
     chatSessions.set(adr, { token, ts: Date.now() })
+    try { await fs.promises.appendFile(path.join(LOG_DIR, 'support-auth-debug.jsonl'), JSON.stringify({ ...authDebug, ok:true, recovered })+'\n', 'utf-8') } catch {}
     return res.json({ ok: true, token, ttlSec: CHAT_TOKEN_TTL_MS/1000 })
   } catch (e) { console.error(e); return res.status(500).json({ error: 'internal_error' }) }
 })
