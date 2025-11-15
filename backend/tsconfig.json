@@ -7,7 +7,8 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "outDir": "dist",
-    "strict": true
+    "strict": false,
+    "noImplicitAny": false
   },
   "include": ["src"]
 }

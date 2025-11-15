@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next'
 import { useWeb3 } from '../web3'
 import PoolArtifact from '@abi/LuckyPool.json'
 import type { PoolInfo } from '../hooks/useContracts'
-import Chat from './Chat'
 import { useToast } from './ToastProvider'
 import { postLog } from '../lib/log'
 import { DEFAULT_RPC, BACKEND_URL } from '../config'
@@ -436,8 +435,7 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
           </div>
         </div>
       )}
-      {/* 简易聊天模块 */}
-      <Chat pool={info.address} address={account || undefined} />
+      {/* 旧的逐池聊天已由全局悬浮客服替代，这里不再渲染 */}
     </div>
   )
 }

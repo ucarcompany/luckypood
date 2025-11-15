@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Contract, BrowserProvider, JsonRpcProvider, Interface } from 'ethers'
+import SupportAdminFloating from './components/SupportAdminFloating'
 function toUnits(input: string, decimals: number): bigint {
   const [ints, fracRaw = ''] = String(input).trim().split('.')
   const frac = (fracRaw + '0'.repeat(decimals)).slice(0, decimals)
@@ -713,7 +714,7 @@ export default function App(){
       <IndexManager />
       <CloneTool />
       <MetaFixer />
-      <SupportAdminPanel />
+      <SupportAdminFloating />
       </>
       )}
     </div>

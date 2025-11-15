@@ -2,31 +2,51 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BACKEND_URL } from '../config'
 
-export default function SupportChat({ address }: { address?: string | null }){
+type Props = {
+  address?: string | null
+  open?: boolean
+  onUnreadChange?: (n: number) => void
+}
+
+export default function SupportChat({ address, open = true, onUnreadChange }: Props){
   const { t } = useTranslation()
   const [token, setToken] = useState<string>('')
   const [busy, setBusy] = useState(false)
   const [text, setText] = useState('')
   const [items, setItems] = useState<Array<{ ts:number, from?:string, address:string, message:string }>>([])
   const lastTsRef = useRef(0)
+  const [err, setErr] = useState<string>('')
+  const unreadRef = useRef(0)
+
+  const parseJsonSafe = async (r: Response) => {
+    const ct = r.headers.get('content-type') || ''
+    if (!ct.includes('application/json')) {
+      const txt = await r.text().catch(()=> '')
+      throw new Error('server_not_json: ' + (txt?.slice(0,120) || ''))
+    }
+    return r.json()
+  }
 
   const doLogin = async () => {
-    if (!address) return alert('Connect wallet')
+    if (!address) { setErr('请先连接钱包'); return }
     try {
       setBusy(true)
       const r1 = await fetch(`${BACKEND_URL}/api/support/nonce?address=${address}`)
-      const j1 = await r1.json()
+      if (!r1.ok) throw new Error('nonce_failed')
+      const j1 = await parseJsonSafe(r1)
       const nonce = j1.nonce
       const msg = `Lucky-pool Support Chat Login\nAddress: ${address.toLowerCase()}\nNonce: ${nonce}`
       const w: any = (window as any)
       const eth: any = w.ethereum || w.okxwallet?.ethereum || w.okxwallet
-      if (!eth) { alert('No wallet'); return }
+      if (!eth) { setErr('未检测到钱包插件'); return }
       const sig = await eth.request({ method: 'personal_sign', params: [msg, address] })
       const r2 = await fetch(`${BACKEND_URL}/api/support/auth`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ address, signature: sig }) })
-      const j2 = await r2.json()
+      if (!r2.ok) throw new Error('auth_failed')
+      const j2 = await parseJsonSafe(r2)
       if (!j2.ok) throw new Error(j2.error || 'auth_failed')
       setToken(j2.token)
-    } catch (e:any) { alert(e?.message || String(e)) }
+      setErr('')
+    } catch (e:any) { setErr(e?.message || String(e)) }
     finally { setBusy(false) }
   }
 
@@ -37,18 +57,20 @@ export default function SupportChat({ address }: { address?: string | null }){
     setBusy(true)
     try {
       const r = await fetch(`${BACKEND_URL}/api/support/message`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ address, token, message: m }) })
-      const j = await r.json()
+      if (!r.ok) throw new Error('send_failed')
+      const j = await parseJsonSafe(r)
       if (!j.ok) throw new Error(j.error || 'send_failed')
       setText('')
       await load()
-    } catch (e:any) { alert(e?.message || String(e)) }
+    } catch (e:any) { setErr(e?.message || String(e)) }
     finally { setBusy(false) }
   }
 
   const load = async () => {
     try {
       const r = await fetch(`${BACKEND_URL}/api/support/messages?address=${address||''}&since=${lastTsRef.current}`)
-      const j = await r.json()
+      if (!r.ok) throw new Error('load_failed')
+      const j = await parseJsonSafe(r)
       if (Array.isArray(j.items)) {
         if (j.items.length > 0) {
           const merged = [...items, ...j.items]
@@ -61,34 +83,52 @@ export default function SupportChat({ address }: { address?: string | null }){
           }
           setItems(uniq as any)
           lastTsRef.current = Math.max(lastTsRef.current, ...uniq.map((x:any)=>x.ts))
+          // 统计未读：仅当窗口关闭或未打开时统计来自 admin 的新消息
+          const newly = j.items.filter((x:any)=> x.from === 'admin')
+          if (newly.length > 0) {
+            if (!open) { unreadRef.current += newly.length; onUnreadChange?.(unreadRef.current) }
+          }
         }
       }
-    } catch {}
+      setErr('')
+    } catch (e:any) {
+      // 服务不可用/HTML 回来时不弹窗，转为组件内提示
+      setErr(e?.message || 'service_unavailable')
+    }
   }
 
   useEffect(() => {
+    if (!address) return
     const id = setInterval(() => { load() }, 5000)
     load()
     return () => clearInterval(id)
-  }, [address])
+  }, [address, open])
+
+  // 打开时清空未读
+  useEffect(()=>{
+    if (open) { unreadRef.current = 0; onUnreadChange?.(0) }
+  }, [open, onUnreadChange])
 
   return (
-    <div className="card" style={{marginTop:12}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <h3 style={{margin:0}}>{t('chat_title')}</h3>
-        {!token ? <button disabled={busy || !address} onClick={doLogin}>{t('chat_connect')}</button> : <span className="badge">OK</span>}
+    <div>
+      <div className="chat-header">
+        <div className="chat-title">{t('chat_title')}</div>
+        {!token ? <button className="btn-primary" disabled={busy || !address} onClick={doLogin}>{t('chat_connect')}</button> : <span className="badge">OK</span>}
       </div>
-      <div style={{maxHeight:260, overflow:'auto', background:'#f8fafc', marginTop:8, padding:'8px 10px', borderRadius:8}}>
-        {items.length===0 ? <div style={{color:'#64748b', fontSize:12}}>...</div> : items.map((it,idx)=> (
-          <div key={idx} style={{margin:'6px 0'}}>
-            <div style={{fontSize:12, color:'#64748b'}}>{new Date(it.ts*1000).toLocaleString()} · {(it.from==='admin'?'ADMIN':'YOU')}</div>
-            <div style={{whiteSpace:'pre-wrap'}}>{it.message}</div>
+      {err && (
+        <div className="chat-error">{err.includes('server_not_json') ? '服务暂不可用（返回了 HTML），请稍后重试' : err}</div>
+      )}
+      <div className="chat-body">
+        {items.length===0 ? <div className="chat-empty">暂无消息</div> : items.map((it,idx)=> (
+          <div key={idx} className={`bubble ${it.from==='admin'?'other':'me'}`}>
+            <div className="bubble-time">{new Date(it.ts*1000).toLocaleString()}</div>
+            <div className="bubble-text">{it.message}</div>
           </div>
         ))}
       </div>
-      <div style={{display:'flex', gap:8, marginTop:8}}>
-        <input style={{flex:1}} placeholder={t('chat_placeholder') || 'Say something...'} value={text} onChange={e=>setText(e.target.value)} />
-        <button disabled={!token || busy || !text.trim()} onClick={send}>{t('chat_send')}</button>
+      <div className="chat-input">
+        <input placeholder={t('chat_placeholder') || 'Say something...'} value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{ if (e.key==='Enter' && text.trim() && !busy && token) send() }} />
+        <button className="btn-primary" disabled={!token || busy || !text.trim()} onClick={send}>{t('chat_send')}</button>
       </div>
     </div>
   )

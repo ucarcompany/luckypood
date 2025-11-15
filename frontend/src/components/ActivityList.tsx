@@ -10,6 +10,23 @@ export default function ActivityList() {
   const { pools, load, loading, error, errorKind, refreshSilent, refreshing, totalPools, cancelledCount, hiddenCount } = usePools()
   const { account } = useWeb3()
   const [chatOpen, setChatOpen] = useState(false)
+  const [unread, setUnread] = useState(0)
+  const audioCtxRef = useRef<AudioContext|null>(null)
+  const beep = () => {
+    try {
+      const ctx = audioCtxRef.current || new (window.AudioContext || (window as any).webkitAudioContext)()
+      audioCtxRef.current = ctx as any
+      const o = ctx.createOscillator()
+      const g = ctx.createGain()
+      o.type = 'sine'
+      o.frequency.value = 880
+      o.connect(g); g.connect(ctx.destination)
+      g.gain.setValueAtTime(0.001, ctx.currentTime)
+      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime+0.02)
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.25)
+      o.start(); o.stop(ctx.currentTime+0.26)
+    } catch {}
+  }
   const showDebug = (() => {
     const params = new URLSearchParams(window.location.search)
     return params.get('debug') === '1' || localStorage.getItem('debug') === '1'
@@ -116,21 +133,28 @@ export default function ActivityList() {
             }}
           >
             💬 {chatOpen ? t('chat_close') : t('chat_open')}
+            {!chatOpen && unread>0 && (
+              <span style={{marginLeft:8, background:'#ef4444', color:'#fff', borderRadius:999, padding:'2px 6px', fontSize:12}}>{unread}</span>
+            )}
           </button>
           {chatOpen && (
             <div
               style={{
-                width:320, maxHeight:420,
+                width:380, maxHeight:560,
                 background:'#fff', borderRadius:16,
                 boxShadow:'0 12px 32px rgba(2,6,23,0.4)',
                 overflow:'hidden', border:'1px solid #e2e8f0'
               }}
             >
-              <div style={{padding:'6px 12px', background:'linear-gradient(135deg,#6366f1,#2563eb,#0ea5e9)', color:'#fff'}}>
-                <strong style={{fontSize:14}}>{t('chat_title')}</strong>
+              <div style={{padding:'10px 14px', background:'linear-gradient(135deg,#6366f1,#2563eb,#0ea5e9)', color:'#fff'}}>
+                <strong style={{fontSize:16}}>{t('chat_title')}</strong>
               </div>
               <div style={{padding:12}}>
-                <SupportChat address={account || undefined} />
+                <SupportChat
+                  address={account || undefined}
+                  open={chatOpen}
+                  onUnreadChange={(n)=>{ if (n>unread) beep(); setUnread(n) }}
+                />
               </div>
             </div>
           )}
