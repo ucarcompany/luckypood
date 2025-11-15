@@ -795,6 +795,138 @@ app.post('/api/log', requireApiKey, async (req, res) => {
   }
 })
 
+// ---- Global Support Chat (by user address, not per pool) ----
+// Separate nonces to avoid message mismatch with pool chat
+const supportNonces = new Map<string, { nonce: string; ts: number }>()
+
+// GET /api/support/nonce?address=0x...
+app.get('/api/support/nonce', async (req, res) => {
+  try {
+    const address = String(req.query.address || '').toLowerCase()
+    if (!/^0x[0-9a-f]{40}$/.test(address)) return res.status(400).json({ error: 'invalid_address' })
+    const nonce = Math.random().toString(36).slice(2) + Date.now().toString(36)
+    supportNonces.set(address, { nonce, ts: Date.now() })
+    return res.json({ nonce, expireInSec: 300 })
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'internal_error' }) }
+})
+
+// POST /api/support/auth { address, signature }
+// Message: `Lucky-pool Support Chat Login\nAddress: <address_lower>\nNonce: <nonce>`
+app.post('/api/support/auth', async (req, res) => {
+  try {
+    const { address, signature } = req.body || {}
+    const adr = String(address || '').toLowerCase()
+    if (!/^0x[0-9a-f]{40}$/.test(adr)) return res.status(400).json({ error: 'invalid_address' })
+    const found = supportNonces.get(adr)
+    if (!found) return res.status(400).json({ error: 'nonce_missing' })
+    if (Date.now() - found.ts > 5*60*1000) { supportNonces.delete(adr); return res.status(400).json({ error: 'nonce_expired' }) }
+    const message = `Lucky-pool Support Chat Login\nAddress: ${adr}\nNonce: ${found.nonce}`
+    let recovered = ''
+    try { recovered = ethersUtils.verifyMessage(message, String(signature||'')) } catch { return res.status(400).json({ error: 'invalid_signature' }) }
+    if (recovered.toLowerCase() !== adr) return res.status(400).json({ error: 'address_mismatch' })
+    supportNonces.delete(adr)
+    const token = randomToken(32)
+    chatSessions.set(adr, { token, ts: Date.now() })
+    return res.json({ ok: true, token, ttlSec: CHAT_TOKEN_TTL_MS/1000 })
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'internal_error' }) }
+})
+
+function supportLogFile(ts: number) {
+  const d = new Date(ts)
+  return path.join(LOG_DIR, `support-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}.jsonl`)
+}
+
+// POST /api/support/message { address, token, message }
+app.post('/api/support/message', async (req, res) => {
+  try {
+    const { address, token } = req.body || {}
+    let { message } = req.body || {}
+    const adr = String(address || '').toLowerCase()
+    if (!/^0x[0-9a-f]{40}$/.test(adr)) return res.status(400).json({ error: 'invalid_address' })
+    message = sanitizeMessage(String(message||''))
+    if (!message) return res.status(400).json({ error: 'empty_message' })
+    const session = chatSessions.get(adr)
+    if (!session || session.token !== String(token||'')) return res.status(401).json({ error: 'unauthorized' })
+    if (Date.now() - session.ts > CHAT_TOKEN_TTL_MS) { chatSessions.delete(adr); return res.status(401).json({ error: 'session_expired' }) }
+    const last = chatLastSent.get(adr) || 0
+    if (Date.now() - last < CHAT_MIN_INTERVAL_MS) return res.status(429).json({ error: 'too_many_requests' })
+    chatLastSent.set(adr, Date.now())
+    const ts = Math.floor(Date.now()/1000)
+    const file = supportLogFile(ts*1000)
+    const line = JSON.stringify({ ts, channel:'support', from:'user', address: adr, message })
+    await fs.promises.appendFile(file, line + '\n', 'utf-8')
+    return res.json({ ok: true, ts })
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'internal_error' }) }
+})
+
+// Admin send to a specific user
+// POST /api/support/admin-message { to, message }
+app.post('/api/support/admin-message', requireApiKey, async (req, res) => {
+  try {
+    const { to } = req.body || {}
+    let { message } = req.body || {}
+    const adr = String(to || '').toLowerCase()
+    if (!/^0x[0-9a-f]{40}$/.test(adr)) return res.status(400).json({ error: 'invalid_address' })
+    message = sanitizeMessage(String(message||''))
+    if (!message) return res.status(400).json({ error: 'empty_message' })
+    const ts = Math.floor(Date.now()/1000)
+    const file = supportLogFile(ts*1000)
+    const line = JSON.stringify({ ts, channel:'support', from:'admin', address: adr, message })
+    await fs.promises.appendFile(file, line + '\n', 'utf-8')
+    return res.json({ ok: true, ts })
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'internal_error' }) }
+})
+
+// GET /api/support/messages?address=0x..&since=unix_ts&limit=200
+// If address provided -> return conversation for that user; if omitted and API key present -> return all recent
+app.get('/api/support/messages', async (req, res) => {
+  try {
+    const adrRaw = String(req.query.address||'').toLowerCase()
+    const since = Number(req.query.since || 0) || 0
+    const limit = Math.min(Math.max(Number(req.query.limit || 200), 1), 1000)
+    const now = new Date()
+    const months = [0, -1].map(delta => {
+      const d = new Date(now.getFullYear(), now.getMonth()+delta, 1)
+      return path.join(LOG_DIR, `support-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}.jsonl`)
+    })
+    const lines: string[] = []
+    for (const f of months) {
+      if (fs.existsSync(f)) {
+        const content = await fs.promises.readFile(f, 'utf-8')
+        lines.push(...content.split(/\r?\n/).filter(Boolean))
+      }
+    }
+    let items = lines.map(l => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
+    if (adrRaw && /^0x[0-9a-f]{40}$/.test(adrRaw)) {
+      items = (items as any[]).filter((it:any)=> it.address === adrRaw)
+    }
+    items = items.filter((it:any)=> !since || (Number(it.ts)||0) > since).slice(-limit)
+    return res.json({ items })
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'internal_error' }) }
+})
+
+// GET /api/support/conversations  -> aggregate by address with lastTs (admin only)
+app.get('/api/support/conversations', requireApiKey, async (_req, res) => {
+  try {
+    const now = new Date()
+    const months = [0, -1].map(delta => {
+      const d = new Date(now.getFullYear(), now.getMonth()+delta, 1)
+      return path.join(LOG_DIR, `support-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}.jsonl`)
+    })
+    const lines: string[] = []
+    for (const f of months) {
+      if (fs.existsSync(f)) {
+        const content = await fs.promises.readFile(f, 'utf-8')
+        lines.push(...content.split(/\r?\n/).filter(Boolean))
+      }
+    }
+    const map = new Map<string, number>()
+    for (const l of lines) { try { const j = JSON.parse(l); if (j?.address) { const t = Number(j.ts)||0; if (t) map.set(j.address, Math.max(map.get(j.address)||0, t)) } } catch {} }
+    const items = Array.from(map.entries()).map(([address, lastTs]) => ({ address, lastTs })).sort((a,b)=> a.lastTs-b.lastTs).slice(-200).reverse()
+    return res.json({ items })
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'internal_error' }) }
+})
+
 // /api/pools 端点已删除：若前端仍调用将收到 404。
 
 // Tail recent logs

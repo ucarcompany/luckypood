@@ -713,6 +713,7 @@ export default function App(){
       <IndexManager />
       <CloneTool />
       <MetaFixer />
+      <SupportAdminPanel />
       </>
       )}
     </div>
@@ -925,6 +926,101 @@ function CloneTool(){
       </div>
       <div style={{marginTop:10}}>
         <button disabled={busy} onClick={run}>{busy ? '处理中...' : '克隆并写入索引'}</button>
+      </div>
+    </div>
+  )
+}
+
+// ====== 管理员端：客服聊天面板 ======
+function SupportAdminPanel(){
+  const backend = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000').trim()
+  const apiKeyEnv = (import.meta.env.VITE_BACKEND_API_KEY || '').trim()
+  const getApiKey = () => {
+    const k = (localStorage.getItem('admin_api_key') || apiKeyEnv || '').trim()
+    return /^[\x20-\x7E]*$/.test(k) ? k : ''
+  }
+  const [list, setList] = useState<Array<{address:string,lastTs:number}>>([])
+  const [addr, setAddr] = useState('')
+  const [items, setItems] = useState<any[]>([])
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const lastRef = useRef(0)
+
+  const loadConvs = async () => {
+    try {
+      const headers: Record<string,string> = {}
+      { const k = getApiKey(); if (k) headers['x-api-key'] = k }
+      const r = await fetch(`${backend}/api/support/conversations`, { headers })
+      if (r.ok) {
+        const j = await r.json().catch(()=>null)
+        if (j?.items) setList(j.items)
+      }
+    } catch {}
+  }
+  const loadMsgs = async () => {
+    if (!addr) return
+    try {
+      const r = await fetch(`${backend}/api/support/messages?address=${addr}&since=${lastRef.current}`)
+      const j = await r.json().catch(()=>null)
+      if (Array.isArray(j?.items) && j.items.length>0) {
+        const merged = [...items, ...j.items]
+        merged.sort((a:any,b:any)=> a.ts - b.ts)
+        const uniq: any[] = []
+        const seen = new Set<string>()
+        for (const it of merged) { const k = `${it.ts}:${it.address}:${it.message}`; if (!seen.has(k)) { seen.add(k); uniq.push(it) } }
+        setItems(uniq)
+        lastRef.current = Math.max(lastRef.current, ...uniq.map((x:any)=>x.ts))
+      }
+    } catch {}
+  }
+  useEffect(()=>{ loadConvs(); const id=setInterval(loadConvs, 6000); return ()=>clearInterval(id) }, [])
+  useEffect(()=>{ lastRef.current=0; setItems([]); if (addr) { loadMsgs(); const id=setInterval(loadMsgs, 4000); return ()=>clearInterval(id) } }, [addr])
+
+  const send = async () => {
+    if (!addr || !text.trim()) return
+    setBusy(true)
+    try {
+      const headers: Record<string,string> = { 'Content-Type':'application/json' }
+      { const k = getApiKey(); if (k) headers['x-api-key'] = k }
+      const r = await fetch(`${backend}/api/support/admin-message`, { method:'POST', headers, body: JSON.stringify({ to: addr, message: text.trim() }) })
+      const j = await r.json().catch(()=>null)
+      if (!r.ok || !j?.ok) throw new Error(j?.error || 'send_failed')
+      setText('')
+      await loadMsgs()
+      await loadConvs()
+    } catch (e:any) { alert(e?.message || String(e)) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div>
+      <div style={{display:'flex', gap:12}}>
+        <div style={{width:320}}>
+          <div style={{fontWeight:600, marginBottom:6}}>会话</div>
+          <div style={{maxHeight:240, overflow:'auto', border:'1px solid #eee', borderRadius:8}}>
+            {list.length===0 ? <div style={{padding:8, color:'#666'}}>暂无</div> : list.map((it)=> (
+              <div key={it.address} onClick={()=>setAddr(it.address)} style={{padding:'8px 10px', cursor:'pointer', background: addr===it.address?'#eef2ff':'#fff', borderBottom:'1px solid #eee'}}>
+                <div style={{fontWeight:600}}>{it.address.slice(0,6)}...{it.address.slice(-4)}</div>
+                <div style={{fontSize:12, color:'#64748b'}}>{new Date(it.lastTs*1000).toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:600, marginBottom:6}}>{addr ? `会话：${addr}` : '选择一个会话'}</div>
+          <div style={{maxHeight:260, overflow:'auto', border:'1px solid #eee', borderRadius:8, padding:'8px 10px'}}>
+            {items.length===0 ? <div style={{color:'#666'}}>暂无消息</div> : items.map((it,idx)=> (
+              <div key={idx} style={{margin:'6px 0'}}>
+                <div style={{fontSize:12, color:'#64748b'}}>{new Date(it.ts*1000).toLocaleString()} · {(it.from==='admin'?'ADMIN':'USER')}</div>
+                <div style={{whiteSpace:'pre-wrap'}}>{it.message}</div>
+              </div>
+            ))}
+          </div>
+          <div className="row" style={{marginTop:8}}>
+            <input style={{flex:1}} placeholder="输入消息" value={text} onChange={e=>setText(e.target.value)} />
+            <button disabled={!addr || busy || !text.trim()} onClick={send}>{busy?'发送中...':'发送'}</button>
+          </div>
+        </div>
       </div>
     </div>
   )

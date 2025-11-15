@@ -1,11 +1,15 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import ActivityCard from './ActivityCard'
 import { usePools } from '../hooks/useContracts'
 import { useTranslation } from 'react-i18next'
+import SupportChat from './SupportChat'
+import { useWeb3 } from '../web3'
 
 export default function ActivityList() {
   const { t } = useTranslation()
   const { pools, load, loading, error, errorKind, refreshSilent, refreshing, totalPools, cancelledCount, hiddenCount } = usePools()
+  const { account } = useWeb3()
+  const [chatOpen, setChatOpen] = useState(false)
   const showDebug = (() => {
     const params = new URLSearchParams(window.location.search)
     return params.get('debug') === '1' || localStorage.getItem('debug') === '1'
@@ -92,6 +96,46 @@ export default function ActivityList() {
       >
         🔄 {loading || refreshing ? t('refreshing') : t('refresh')}
       </button>
+      {/* 悬浮客服入口（与刷新按钮并列，略向上避免遮挡） */}
+      {(
+        <div
+          style={{
+            position:'fixed', right:16, bottom:90, zIndex:1000,
+            display:'flex', flexDirection:'column', alignItems:'flex-end'
+          }}
+        >
+          <button
+            onClick={()=> setChatOpen(v=>!v)}
+            aria-label="chat-toggle"
+            style={{
+              padding:'10px 14px', borderRadius:20,
+              background: chatOpen ? '#0d9488' : '#1d4ed8',
+              color:'#fff', border:'none',
+              boxShadow:'0 6px 20px rgba(0,0,0,0.25)',
+              cursor:'pointer', marginBottom: chatOpen?8:0
+            }}
+          >
+            💬 {chatOpen ? t('chat_close') : t('chat_open')}
+          </button>
+          {chatOpen && (
+            <div
+              style={{
+                width:320, maxHeight:420,
+                background:'#fff', borderRadius:16,
+                boxShadow:'0 12px 32px rgba(2,6,23,0.4)',
+                overflow:'hidden', border:'1px solid #e2e8f0'
+              }}
+            >
+              <div style={{padding:'6px 12px', background:'linear-gradient(135deg,#6366f1,#2563eb,#0ea5e9)', color:'#fff'}}>
+                <strong style={{fontSize:14}}>{t('chat_title')}</strong>
+              </div>
+              <div style={{padding:12}}>
+                <SupportChat address={account || undefined} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
