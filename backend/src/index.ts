@@ -53,8 +53,9 @@ const upload = multer({
 // Express app
 const app = express();
 app.disable('x-powered-by');
-// 部署在 Nginx 反向代理之后，启用 trust proxy，避免 express-rate-limit 关于 X-Forwarded-For 的告警
-app.set('trust proxy', true);
+// 部署在 Nginx 反向代理之后，仅信任最前置的 1 层代理
+// 注意：express-rate-limit v7 不允许使用宽松的 true（会抛 ERR_ERL_PERMISSIVE_TRUST_PROXY）
+app.set('trust proxy', 1);
 // Helmet with relaxed CORP/COEP so that images/JSON can be embedded across LAN origins
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
@@ -354,7 +355,7 @@ app.post('/api/meta/alias', requireApiKey, async (req, res) => {
     if (!target) return res.status(400).json({ error: 'missing_uri' })
     let json: any = null
     try {
-      const r = await fetch(target)
+      const r = await fetchWithTimeout(String(target), 3000)
       if (!r.ok) return res.status(400).json({ error: 'fetch_failed', status: r.status })
       json = await r.json().catch(()=>null)
     } catch (e) {
@@ -376,6 +377,45 @@ app.post('/api/meta/alias', requireApiKey, async (req, res) => {
   }
 })
 
+// 批量为 index.json 中所有池生成/刷新别名文件，并将映射指向稳定别名
+// POST /api/meta/alias-all  { force?: 1 }  force=1 时即使已存在别名文件也重新写入
+app.post('/api/meta/alias-all', requireApiKey, async (req, res) => {
+  try {
+    const force = String((req.body||{}).force||'0') === '1'
+    const base = new URL(BASE_URL)
+    const idx = await readIndex()
+    const updated: { pool:string; alias:string; refreshed:boolean }[] = []
+    for (const [pool, uri] of Object.entries(idx)) {
+      const lower = pool.toLowerCase()
+      if (!uri) continue
+      const aliasPath = path.join(METADATA_DIR, `${lower}.json`)
+      let need = force || !fs.existsSync(aliasPath)
+      let json: any = null
+      if (need) {
+        try {
+          const r = await fetch(uri)
+          if (r.ok) json = await r.json().catch(()=>null)
+        } catch {}
+        if (json && typeof json === 'object') {
+          await fs.promises.writeFile(aliasPath, JSON.stringify(json, null, 2), 'utf-8')
+          const aliasUri = `${base.origin}/meta/${lower}.json`
+          idx[lower] = aliasUri
+          updated.push({ pool: lower, alias: aliasUri, refreshed: true })
+        }
+      } else {
+        const aliasUri = `${base.origin}/meta/${lower}.json`
+        idx[lower] = aliasUri
+        updated.push({ pool: lower, alias: aliasUri, refreshed: false })
+      }
+    }
+    await writeIndex(idx)
+    return res.json({ ok: true, count: updated.length, items: updated, force })
+  } catch (e) {
+    console.error(e)
+    return res.status(500).json({ error: 'internal_error' })
+  }
+})
+
 // ---- Index scanning and auto-repair for alias stability ----
 type ScanIssue = {
   pool: string
@@ -391,6 +431,18 @@ async function tryReadJsonFile(p: string): Promise<any|null> {
     if (j && typeof j === 'object') return j
     return null
   } catch { return null }
+}
+
+// Helper: fetch with timeout to avoid hanging on unreachable hosts
+async function fetchWithTimeout(url: string, timeoutMs = 3000): Promise<Response> {
+  const ctrl = new AbortController()
+  const id = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    // @ts-ignore Node 18+ has global fetch and AbortController
+    return await fetch(url, { signal: ctrl.signal })
+  } finally {
+    clearTimeout(id)
+  }
 }
 
 async function writeScanLog(lines: any[]) {
@@ -437,7 +489,7 @@ async function scanAndMaybeRepairIndex(opts: { repair: boolean }): Promise<{
       continue
     }
     try {
-      const r = await fetch(String(uri))
+      const r = await fetchWithTimeout(String(uri), 3000)
       if (!r.ok) {
         issues.push({ pool: lower, uri: String(uri), reason: 'fetch_failed', status: r.status })
         broken++
@@ -504,7 +556,7 @@ const scanMetaHandler: express.RequestHandler = async (req, res) => {
 ;(app.get as any)('/api/meta/scan', scanMetaHandler as any)
 
 // 启动时与每小时定期扫描一次（自动修复）
-(async () => {
+; (async () => {
   try {
     const first = await scanAndMaybeRepairIndex({ repair: true })
     if (first.broken>0) console.log(`Index scan at start: broken=${first.broken}, repaired=${first.repaired}`)
@@ -533,7 +585,7 @@ app.post('/api/meta/clone', requireApiKey, async (req, res) => {
       // 回退到 index 映射
       const idx = await readIndex(); const uri = idx[src]
       if (!uri) return res.status(400).json({ error: 'missing_src_uri' })
-      const r = await fetch(uri).catch(()=>null)
+      const r = await fetchWithTimeout(String(uri), 3000).catch(()=>null as any)
       if (!r || !r.ok) return res.status(400).json({ error: 'fetch_failed' })
       json = await r.json().catch(()=>null)
       if (!json || typeof json !== 'object') return res.status(400).json({ error: 'invalid_metadata' })
@@ -744,9 +796,8 @@ app.get('/api/stats', async (_req, res) => {
   }
 })
 
-// Start HTTP server
-const httpServer = http.createServer(app);
-httpServer.listen(PORT, () => {
+// Start HTTP server (use Express' built-in listener to avoid accidental app() invocation)
+app.listen(PORT, () => {
   console.log(`Lucky-pool backend listening on ${BASE_URL}`);
 });
 
