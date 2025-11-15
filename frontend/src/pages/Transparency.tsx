@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { DEFAULT_RPC, FACTORY_ADDRESS, BACKEND_URL } from '../config'
+import { DEFAULT_RPC, FACTORY_ADDRESS, BACKEND_URL, FACTORY_DEPLOY_BLOCK } from '../config'
 import FactoryArtifact from '@abi/LuckyPoolFactory.json'
 import { Contract, Interface, JsonRpcProvider } from 'ethers'
 import { useTranslation } from 'react-i18next'
@@ -19,7 +19,8 @@ export default function Transparency() {
         const iface = new Interface(FactoryArtifact.abi as any)
         const ev = iface.getEvent('PoolCreated')
         const topic0 = (ev as any).topicHash || (iface as any).getEventTopic?.('PoolCreated')
-        const logs = await (provider as any).getLogs({ address: FACTORY_ADDRESS, topics: [topic0], fromBlock: 0 })
+        const fromBlock = (Number(FACTORY_DEPLOY_BLOCK||0) > 0) ? Number(FACTORY_DEPLOY_BLOCK) : 0
+        const logs = await (provider as any).getLogs({ address: FACTORY_ADDRESS, topics: [topic0], fromBlock })
         const res: any[] = []
         for (const log of logs) {
           try {

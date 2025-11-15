@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BrowserProvider, JsonRpcProvider, Contract, Interface } from 'ethers'
-import { FACTORY_ADDRESS, DEFAULT_RPC, HIDDEN_POOLS, BACKEND_URL, FACTORY_DEPLOY_BLOCK } from '../config'
+import { FACTORY_ADDRESS, DEFAULT_RPC, HIDDEN_POOLS, BACKEND_URL, FACTORY_DEPLOY_BLOCK, BACKEND_API_KEY } from '../config'
 import FactoryArtifact from '@abi/LuckyPoolFactory.json'
 import PoolArtifact from '@abi/LuckyPool.json'
 
@@ -64,6 +64,7 @@ export function usePools() {
   const [pools, setPools] = useState<PoolInfo[]>([])
   const [refreshing, setRefreshing] = useState(false)
   const loadingRef = useRef(false) // 防止并发加载
+  const repairAttemptedRef = useRef(false) // 避免循环触发后端修复
   // 调试统计：原始池数量 / 过滤原因
   const [totalPools, setTotalPools] = useState(0)
   const [cancelledCount, setCancelledCount] = useState(0)
@@ -309,6 +310,22 @@ export function usePools() {
         } catch {}
       }
 
+      // 如果后端没有任何映射，且之前未尝试修复，则触发一次自动修复：
+      // 1) 迁移 index.json 中的私网/异域链接到 BASE_URL
+      // 2) 为所有池生成/刷新别名 meta/<pool>.json 并把 index 指向别名
+      const tryAutoRepairBackend = async () => {
+        if (!BACKEND_URL) return false
+        try {
+          const headers: any = { 'Content-Type': 'application/json' }
+          if (BACKEND_API_KEY) headers['x-api-key'] = BACKEND_API_KEY
+          // migrate（容错，不要求一定成功）
+          await fetch(`${BACKEND_URL}/api/meta/migrate?force=1`, { method:'POST', headers })
+          // alias-all（确保别名存在）
+          const r = await fetch(`${BACKEND_URL}/api/meta/alias-all`, { method:'POST', headers, body: JSON.stringify({ force: false }) })
+          return r.ok
+        } catch { return false }
+      }
+
       // --- 优化：并行获取所有池基本信息 ---
       const poolInfos = await Promise.all(poolAddrs.map(async addr => {
         const pool = new Contract(addr, PoolArtifact.abi, readProv)
@@ -363,6 +380,7 @@ export function usePools() {
       const concurrency = 5
       const queue: Array<() => Promise<void>> = []
       const out: PoolInfo[] = []
+      let missingMetaCount = 0
       for (const { addr, info } of poolInfos) {
         if (!info) continue
         const lower = addr.toLowerCase()
@@ -440,6 +458,7 @@ export function usePools() {
             } catch {}
             item.meta = { title: meta.title, image, description: meta.description, startAt: meta.startAt ? Number(meta.startAt) : undefined, __src: metaSrc }
           } else {
+            missingMetaCount++
             item.meta = { title: '测试活动', description: '占位元数据（未提供或解析失败）。', image: undefined, startAt: undefined, __src: 'placeholder' }
           }
           out.push(item)
@@ -467,6 +486,15 @@ export function usePools() {
         }
       }
       await Promise.all(runners)
+      // 若大多数元数据缺失，且尚未尝试过修复，则尝试调用后端修复并做一次静默重载
+      if (!opts?.silent && !repairAttemptedRef.current && missingMetaCount >= Math.ceil(Math.max(1, out.length) * 0.6)) {
+        const ok = await tryAutoRepairBackend()
+        repairAttemptedRef.current = true
+        if (ok) {
+          // 小延迟后进行一次静默刷新，让别名/索引生效
+          setTimeout(()=> { loadImpl({ silent: true }) }, 300)
+        }
+      }
   const res = out
   // 过滤掉已取消的活动
   const active = res.filter(p => !p.cancelled && !HIDDEN_POOLS.includes(p.address.toLowerCase()))
