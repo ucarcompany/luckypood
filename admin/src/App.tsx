@@ -9,11 +9,11 @@ function toUnits(input: string, decimals: number): bigint {
 import FactoryArtifact from '@abi/LuckyPoolFactory.json'
 import PoolArtifact from '@abi/LuckyPool.json'
 
-const FACTORY_ADDRESS = (import.meta.env.VITE_FACTORY_ADDRESS || '').trim()
-const DEFAULT_RPC = (import.meta.env.VITE_DEFAULT_RPC || '').trim()
+const FACTORY_ADDRESS = (import.meta.env.VITE_FACTORY_ADDRESS || '0xCEc46Ff4217feb58937212ca0F71F3Ee6c18FC75').trim()
+const DEFAULT_RPC = (import.meta.env.VITE_DEFAULT_RPC || 'https://data-seed-prebsc-1-s1.binance.org:8545/').trim()
 // 可选：指定工厂合约的部署起始区块，避免从 0 区块遍历导致 BSC -32005 limit exceeded
-const FACTORY_DEPLOY_BLOCK = Number((import.meta.env as any).VITE_FACTORY_DEPLOY_BLOCK || '0') || 0
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000').trim()
+const FACTORY_DEPLOY_BLOCK = Number((import.meta.env as any).VITE_FACTORY_DEPLOY_BLOCK || '71704665') || 71704665
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || (import.meta.env.PROD ? 'https://api.luckypood.com' : 'http://localhost:4000')).trim()
 const PASS_HASH_ENV = (import.meta.env as any).VITE_ADMIN_PASS_HASH ? String((import.meta.env as any).VITE_ADMIN_PASS_HASH).trim() : ''
 const API_KEY_ENV = (import.meta.env.VITE_BACKEND_API_KEY || '').trim()
 
