@@ -806,6 +806,8 @@ app.get('/api/support/nonce', async (req, res) => {
     if (!/^0x[0-9a-f]{40}$/.test(address)) return res.status(400).json({ error: 'invalid_address' })
     const nonce = Math.random().toString(36).slice(2) + Date.now().toString(36)
     supportNonces.set(address, { nonce, ts: Date.now() })
+    // 禁止缓存，避免 304 导致前端拿不到新 nonce
+    try { res.setHeader('Cache-Control', 'no-store') } catch {}
     return res.json({ nonce, expireInSec: 300 })
   } catch (e) { console.error(e); return res.status(500).json({ error: 'internal_error' }) }
 })
@@ -818,8 +820,15 @@ app.post('/api/support/auth', async (req, res) => {
     const adr = String(address || '').toLowerCase()
     if (!/^0x[0-9a-f]{40}$/.test(adr)) return res.status(400).json({ error: 'invalid_address' })
     const found = supportNonces.get(adr)
-    if (!found) return res.status(400).json({ error: 'nonce_missing' })
-    if (Date.now() - found.ts > 5*60*1000) { supportNonces.delete(adr); return res.status(400).json({ error: 'nonce_expired' }) }
+    if (!found) {
+      try { await fs.promises.appendFile(path.join(LOG_DIR, 'support-auth-debug.jsonl'), JSON.stringify({ stage:'verify', adr, error:'nonce_missing', ts: Date.now() })+'\n', 'utf-8') } catch {}
+      return res.status(400).json({ error: 'nonce_missing' })
+    }
+    if (Date.now() - found.ts > 5*60*1000) {
+      supportNonces.delete(adr)
+      try { await fs.promises.appendFile(path.join(LOG_DIR, 'support-auth-debug.jsonl'), JSON.stringify({ stage:'verify', adr, error:'nonce_expired', ts: Date.now() })+'\n', 'utf-8') } catch {}
+      return res.status(400).json({ error: 'nonce_expired' })
+    }
     const message = `Lucky-pool Support Chat Login\nAddress: ${adr}\nNonce: ${found.nonce}`
     const sig = String(signature||'')
     const authDebug: any = { stage: 'verify', adr, sigLen: sig.length, ts: Date.now() }
