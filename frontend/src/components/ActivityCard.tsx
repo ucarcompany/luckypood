@@ -154,10 +154,12 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
       let friendly = raw
       if (/user denied|rejected|denied/i.test(raw)) {
         friendly = '您已取消交易\nYou cancelled the transaction.'
-      } else if (/Transaction failed|could not coalesce/i.test(raw) || e?.code === 'UNKNOWN_ERROR') {
+      } else if (/Transaction failed|could not coalesce/i.test(raw) || e?.code === 'UNKNOWN_ERROR' || /execution reverted \(unknown custom error\)/i.test(raw)) {
         friendly = '实在抱歉，小水滴正在努力搬运区块与区块链对接信息中，请您耐心等待，预计1~2分钟完成信息对接哦~\nSorry, the droplets are syncing with blockchain. Please wait about 1-2 minutes and retry.'
       } else if (/bal|insufficient|exceeds balance|transfer amount exceeds balance/i.test(raw)) {
         friendly = '余额不足，请先准备足够的稳定币再试~\nInsufficient token balance. Please top up the stablecoin and retry.'
+      } else if (notStarted || remaining===0) {
+        friendly = '当前期暂不可参与：可能未到开始时间、已封盘或已达上限。稍后再试~'
       }
       setStatus(friendly)
       toast.show(friendly, 'error')
@@ -217,7 +219,7 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
     if (en) return Number(en[1])
     return null
   }
-  const period = extractPeriod(info.meta?.title)
+  const period = (info as any).seriesPeriod ?? extractPeriod(info.meta?.title)
 
   const tryDraw = async () => {
     if (!provider) return
@@ -341,6 +343,7 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
             <div style={{flex:1,minWidth:0}}>
               <div className="card-title" style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
                 <span>{info.meta?.title || t('activities')}</span>
+                {period!=null && <span className="pill">{t('period_label_zh',{n:period})}</span>}
                 {info.sortOrder!=null && <span className="pill">#{info.sortOrder}</span>}
               </div>
               {info.meta?.description && <div className="card-desc" style={{marginTop:4}} title={info.meta.description}>{info.meta.description}</div>}

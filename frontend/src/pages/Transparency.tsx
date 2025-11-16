@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { DEFAULT_RPC, FACTORY_ADDRESS, BACKEND_URL, FACTORY_DEPLOY_BLOCK } from '../config'
 import FactoryArtifact from '@abi/LuckyPoolFactory.json'
-import { Contract, Interface, JsonRpcProvider } from 'ethers'
+import { Interface, JsonRpcProvider } from 'ethers'
 import { useTranslation } from 'react-i18next'
 
 export default function Transparency() {
@@ -20,7 +20,35 @@ export default function Transparency() {
         const ev = iface.getEvent('PoolCreated')
         const topic0 = (ev as any).topicHash || (iface as any).getEventTopic?.('PoolCreated')
         const fromBlock = (Number(FACTORY_DEPLOY_BLOCK||0) > 0) ? Number(FACTORY_DEPLOY_BLOCK) : 0
-        const logs = await (provider as any).getLogs({ address: FACTORY_ADDRESS, topics: [topic0], fromBlock })
+        // 分段拉取，规避 BSC -32005 limit exceeded
+        const getLogsBatched = async (
+          prov: any,
+          filter: { address: string, topics: (string|null)[] },
+          opts?: { fromBlock?: number, toBlock?: number, batchSize?: number }
+        ) => {
+          const latest = opts?.toBlock ?? await prov.getBlockNumber()
+          let start = Math.max(0, opts?.fromBlock ?? 0)
+          const out: any[] = []
+          let step = opts?.batchSize ?? 50_000
+          while (start <= latest) {
+            const end = Math.min(start + step, latest)
+            try {
+              const part = await prov.getLogs({ ...filter, fromBlock: start, toBlock: end })
+              out.push(...part)
+              start = end + 1
+              if (step < 100_000) step = Math.min(100_000, Math.floor(step*1.5))
+            } catch (e: any) {
+              const msg = e?.message || ''
+              const code = e?.code
+              if (code === -32005 || /limit exceeded|block range|query timeout/i.test(msg)) {
+                if (step > 50) { step = Math.max(50, Math.floor(step/2)); continue }
+              }
+              throw e
+            }
+          }
+          return out
+        }
+        const logs = await getLogsBatched(provider, { address: FACTORY_ADDRESS, topics: [topic0] }, { fromBlock })
         const res: any[] = []
         for (const log of logs) {
           try {
@@ -47,7 +75,13 @@ export default function Transparency() {
           } catch {}
         }
       } catch (e:any) {
-        setError(e.message || String(e))
+        const raw = e?.message || String(e)
+        // 统一转成更友好的提示
+        if (/could not coalesce|limit exceeded|block range|query timeout/i.test(raw)) {
+          setError('节点繁忙，正在同步区块数据，请1-2分钟后再试。')
+        } else {
+          setError(raw)
+        }
       }
     })()
   }, [])

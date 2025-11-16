@@ -86,25 +86,28 @@ export default function SupportChat({ address, open = true, onUnreadChange }: Pr
 
   const load = async () => {
     try {
-      const r = await fetch(`${BACKEND_URL}/api/support/messages?address=${address||''}&since=${lastTsRef.current}`)
+      const r = await fetch(`${BACKEND_URL}/api/support/messages?address=${address||''}&since=${lastTsRef.current}&limit=500`)
       if (!r.ok) throw new Error('load_failed')
       const j = await parseJsonSafe(r)
       if (Array.isArray(j.items)) {
         if (j.items.length > 0) {
-          const merged = [...items, ...j.items]
-          merged.sort((a,b)=> a.ts - b.ts)
-          const uniq: any[] = []
-          const seen = new Set<string>()
-          for (const it of merged) {
-            const k = `${it.ts}:${it.address}:${it.message}`
-            if (!seen.has(k)) { seen.add(k); uniq.push(it as any) }
-          }
-          setItems(uniq as any)
-          lastTsRef.current = Math.max(lastTsRef.current, ...uniq.map((x:any)=>x.ts))
+          // 采用函数式更新，避免闭包里的旧 items 覆盖最新状态；保留最近24小时窗口
+          const newly = j.items as Array<{ ts:number, from?:string, address:string, message:string }>
+          setItems(prev => {
+            const cutoff = Math.floor(Date.now()/1000) - 24*60*60
+            const merged = [...prev, ...newly]
+              .filter(it => (it && typeof it.ts === 'number' ? it.ts : 0) >= cutoff)
+              .sort((a,b)=> a.ts - b.ts)
+            return merged.slice(-500)
+          })
+          // 推进 since 游标（只基于新返回的 items 即可）
+          const maxNew = Math.max(...newly.map(it=> Number(it.ts)||0), 0)
+          if (maxNew > 0) lastTsRef.current = Math.max(lastTsRef.current, maxNew)
           // 统计未读：仅当窗口关闭或未打开时统计来自 admin 的新消息
-          const newly = j.items.filter((x:any)=> x.from === 'admin')
-          if (newly.length > 0) {
-            if (!open) { unreadRef.current += newly.length; onUnreadChange?.(unreadRef.current) }
+          const newlyAdmin = newly.filter((x:any)=> x.from === 'admin')
+          if (newlyAdmin.length > 0 && !open) {
+            unreadRef.current += newlyAdmin.length
+            onUnreadChange?.(unreadRef.current)
           }
         }
       }
@@ -117,6 +120,8 @@ export default function SupportChat({ address, open = true, onUnreadChange }: Pr
 
   useEffect(() => {
     if (!address) return
+    // 初始拉取窗口为最近24小时
+    if (!lastTsRef.current) lastTsRef.current = Math.floor(Date.now()/1000) - 24*60*60
     const id = setInterval(() => { load() }, 5000)
     load()
     return () => clearInterval(id)

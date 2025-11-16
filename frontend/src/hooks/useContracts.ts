@@ -24,6 +24,10 @@ export type PoolInfo = {
   metadataURI?: string
   meta?: { title?: string; description?: string; image?: string; startAt?: number; __src?: string }
   sortOrder?: number
+  // derived
+  seriesPeriod?: number
+  baseTitle?: string
+  drawAt?: number
 }
 
 export function useEthersProvider() {
@@ -381,6 +385,21 @@ export function usePools() {
       const queue: Array<() => Promise<void>> = []
       const out: PoolInfo[] = []
       let missingMetaCount = 0
+      // 缓存各池 DrawFulfilled 时间，避免重复链上查询
+      const drawTimeCache: Record<string, number> = {}
+      const getDrawAt = async (prov:any, poolAddr:string): Promise<number|undefined> => {
+        try {
+          const iface = new Interface(PoolArtifact.abi as any)
+          const ev = iface.getEvent('DrawFulfilled')
+          const topic0 = (ev as any).topicHash || (iface as any).getEventTopic?.('DrawFulfilled')
+          const logs = await getLogsBatched(prov, { address: poolAddr, topics: [topic0] }, { fromBlock: 0 })
+          if (logs.length === 0) return undefined
+          const last = logs[logs.length-1]
+          const blk = await prov.getBlock(last.blockNumber)
+          return Number(blk.timestamp)
+        } catch { return undefined }
+      }
+
       for (const { addr, info } of poolInfos) {
         if (!info) continue
         const lower = addr.toLowerCase()
@@ -461,6 +480,14 @@ export function usePools() {
             missingMetaCount++
             item.meta = { title: '测试活动', description: '占位元数据（未提供或解析失败）。', image: undefined, startAt: undefined, __src: 'placeholder' }
           }
+
+          // 若已开奖，补充 drawAt 时间，用于“炫丽显示3天后隐藏”
+          if (info.drawn) {
+            try {
+              const t = drawTimeCache[lower] ?? await getDrawAt(readProv, addr)
+              if (t) { drawTimeCache[lower] = t; item.drawAt = t }
+            } catch {}
+          }
           out.push(item)
           // 增量渲染：每处理完一个池就刷新 UI（减少首屏等待）
           setPools(prev => {
@@ -496,8 +523,33 @@ export function usePools() {
         }
       }
   const res = out
-  // 过滤掉已取消的活动
-  const active = res.filter(p => !p.cancelled && !HIDDEN_POOLS.includes(p.address.toLowerCase()))
+  // 计算系列期数：按标题去掉“第N期/Period N”等标记后的基名分组，按 sortOrder/createdAt 升序编号
+  const normalizeTitle = (s?: string) => {
+    if (!s) return 'untitled'
+    let x = s.replace(/第\s*\d+\s*期/gi, '').replace(/period\s*\d+/gi, '')
+    x = x.replace(/\(test\)/gi, '').replace(/test use/gi, '').trim()
+    return x || 'untitled'
+  }
+  const groups: Record<string, PoolInfo[]> = {}
+  for (const it of res) {
+    const key = normalizeTitle(it.meta?.title)
+    it.baseTitle = key
+    if (!groups[key]) groups[key] = []
+    groups[key].push(it)
+  }
+  for (const key of Object.keys(groups)) {
+    groups[key].sort((a,b)=> (a.sortOrder ?? a.createdAt) - (b.sortOrder ?? b.createdAt))
+    groups[key].forEach((it,idx)=> { it.seriesPeriod = idx+1 })
+  }
+
+  // 过滤掉已取消的活动；若已开奖且超过3天则隐藏
+  const nowSec = Math.floor(Date.now()/1000)
+  const active = res.filter(p => {
+    if (p.cancelled) return false
+    if (HIDDEN_POOLS.includes(p.address.toLowerCase())) return false
+    if (p.drawn && p.drawAt && nowSec > p.drawAt + 3*24*3600) return false
+    return true
+  })
   setCancelledCount(res.filter(p=>p.cancelled).length)
   setHiddenCount(res.filter(p=>HIDDEN_POOLS.includes(p.address.toLowerCase())).length)
   // sort by sortOrder asc if present
