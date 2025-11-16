@@ -672,6 +672,10 @@ app.post('/api/meta/clone', requireApiKey, async (req, res) => {
   } catch (e) { console.error(e); return res.status(500).json({ error: 'internal_error' }) }
 })
 
+// ===== 自动下一期守护（可选） =====
+import { registerAutoNext } from './autoNext'
+try { registerAutoNext(app) } catch (e) { console.warn('auto-next init failed:', e) }
+
 // ---- Simple Chat System (short polling, per-pool) ----
 // In-memory auth state (reset on process restart)
 const CHAT_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
