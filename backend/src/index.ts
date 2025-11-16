@@ -615,10 +615,10 @@ const scanMetaHandler: express.RequestHandler = async (req, res) => {
     return res.status(500).json({ error: 'internal_error' }) as any
   }
 }
-;(app.get as any)('/api/meta/scan', scanMetaHandler as any)
+;(app.get as any)('/api/meta/scan', scanMetaHandler as any);
 
 // 启动时与每小时定期扫描一次（自动修复）
-; (async () => {
+;(async () => {
   try {
     const first = await scanAndMaybeRepairIndex({ repair: true })
     if (first.broken>0) console.log(`Index scan at start: broken=${first.broken}, repaired=${first.repaired}`)
