@@ -657,6 +657,9 @@ app.post('/api/meta/clone', requireApiKey, async (req, res) => {
       for (const k of ['title','description','image'] as const) {
         if (typeof (replacements as any)[k] === 'string' && (replacements as any)[k]) (json as any)[k] = (replacements as any)[k]
       }
+      if (typeof (replacements as any).startAt === 'number' && (replacements as any).startAt > 0) {
+        (json as any).startAt = Math.floor(Number((replacements as any).startAt))
+      }
     }
     // 写入目标别名
     const aliasDstPath = path.join(METADATA_DIR, `${dst}.json`)
