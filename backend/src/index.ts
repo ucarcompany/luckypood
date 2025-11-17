@@ -676,6 +676,10 @@ app.post('/api/meta/clone', requireApiKey, async (req, res) => {
 import { registerAutoNext } from './autoNext'
 try { registerAutoNext(app) } catch (e) { console.warn('auto-next init failed:', e) }
 
+// ===== 历史清理（30天策略） =====
+import { registerCleanup } from './cleanup'
+try { registerCleanup(app) } catch (e) { console.warn('cleanup init failed:', e) }
+
 // ---- Simple Chat System (short polling, per-pool) ----
 // In-memory auth state (reset on process restart)
 const CHAT_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
