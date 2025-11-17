@@ -60,7 +60,7 @@ export function registerCleanup(app: express.Express){
     const idx = readIndex(); if (idx[lower]) { delete idx[lower]; writeIndex(idx) }
   }
 
-  async function runCleanupOnce(): Promise<{ scanned:number; cancelled:number; pruned:number }>{
+  async function runCleanupOnce(all = false): Promise<{ scanned:number; cancelled:number; pruned:number }>{
     const addrs = await listPools()
     let cancelled = 0, pruned = 0
     const n = nowSec()
@@ -68,7 +68,7 @@ export function registerCleanup(app: express.Express){
       try {
         const info: any = await getInfo(a)
         const created = Number(info.createdAt||0)
-        if (!created || (n - created) <= THIRTY_DAYS) continue
+        if (!all && (!created || (n - created) <= THIRTY_DAYS)) continue
         // 策略：
         // - 若未开奖且未取消：尝试链上批量退款取消
         // - 无论是否成功，清理本地索引与别名（前端将不再展示历史）
@@ -97,10 +97,10 @@ export function registerCleanup(app: express.Express){
   })
 
   // API：立即执行一次清理
-  app.post('/api/cleanup/run', async (_req, res) => {
-    try { const r = await runCleanupOnce(); return res.json({ ok:true, ...r }) } catch (e:any) { return res.status(500).json({ error: e?.message||'internal_error' }) }
+  app.post('/api/cleanup/run', async (req, res) => {
+    try { const all = String((req.query as any).all||'0')==='1'; const r = await runCleanupOnce(all); return res.json({ ok:true, all, ...r }) } catch (e:any) { return res.status(500).json({ error: e?.message||'internal_error' }) }
   })
 
   // 定时任务：每6小时执行一次
-  setInterval(() => { runCleanupOnce().catch(()=>{}) }, 6 * 60 * 60 * 1000)
+  setInterval(() => { runCleanupOnce(false).catch(()=>{}) }, 6 * 60 * 60 * 1000)
 }
