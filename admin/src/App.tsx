@@ -303,6 +303,92 @@ export default function App(){
 
   // 单个池：刷新/创建别名
   const [aliasBusy, setAliasBusy] = useState<string|null>(null)
+  const [expanded, setExpanded] = useState<string|null>(null)
+  type RowAutoNext = { loaded?: boolean; seriesKey?: string; enabled: boolean; decimals: number; minHuman: string; maxHuman: string; loading?: boolean; saving?: boolean }
+  const [rowAuto, setRowAuto] = useState<Record<string, RowAutoNext>>({})
+
+  const normalizeTitle = (s?: string) => {
+    if (!s) return 'untitled'
+    let x = String(s)
+    x = x.replace(/第\s*\d+\s*期/gi, '')
+    x = x.replace(/period\s*\d+/gi, '')
+    x = x.replace(/\(test\)/gi, '').replace(/test use/gi, '')
+    x = x.trim()
+    return x || 'untitled'
+  }
+
+  const ensureRowLoaded = async (addr: string) => {
+    if (!BACKEND_URL) return
+    setRowAuto(prev => ({ ...prev, [addr]: { ...(prev[addr]||{ enabled:true, decimals:18, minHuman:'', maxHuman:'' }), loading: true } }))
+    try {
+      const lower = addr.toLowerCase()
+      // 1) 读取别名元数据或 index
+      const tryFetch = async (url: string) => { try { const r = await fetch(url, { cache: 'no-store' as RequestCache }); if (r.ok) return await r.json().catch(()=>null) } catch {}; return null }
+      let meta: any = null
+      const aliasUri = `${BACKEND_URL}/meta/${lower}.json`
+      meta = await tryFetch(aliasUri)
+      if (!meta) {
+        try {
+          const r = await fetch(`${BACKEND_URL}/api/meta/index`)
+          if (r.ok) { const j = await r.json().catch(()=>null) as Record<string,string>|null; const uri = j?.[lower]; if (uri) meta = await tryFetch(uri) }
+        } catch {}
+      }
+      const seriesKey = normalizeTitle(meta?.title)
+      // 2) 拉取 auto-next 配置
+      let enabled = true, minHuman = '', maxHuman = '', decimals = (rowAuto[addr]?.decimals || 18)
+      try {
+        const headers: Record<string,string> = {}
+        { const ak = getApiKey(); if (ak) headers['x-api-key'] = ak }
+        const r = await fetch(`${BACKEND_URL}/api/auto-next`, { headers })
+        const j = await r.json().catch(()=>null)
+        const cfg = j?.series?.[seriesKey]
+        if (cfg) {
+          enabled = cfg.enabled !== false
+          if (cfg.nextMin) { try { minHuman = String(Number(cfg.nextMin)/10**decimals) } catch {} }
+          if (cfg.nextMax) { try { maxHuman = String(Number(cfg.nextMax)/10**decimals) } catch {} }
+        }
+      } catch {}
+      setRowAuto(prev => ({ ...prev, [addr]: { loaded: true, seriesKey, enabled, decimals, minHuman, maxHuman } }))
+    } finally {
+      setRowAuto(prev => ({ ...prev, [addr]: { ...(prev[addr]||{}), loading: false } }))
+    }
+  }
+
+  const saveRowAuto = async (addr: string) => {
+    const st = rowAuto[addr]; if (!st || !st.seriesKey) return
+    if (!st.minHuman || !st.maxHuman) return alert('请填写下一期最小/最大金额')
+    try { const a = toUnits(st.minHuman, st.decimals); const b = toUnits(st.maxHuman, st.decimals); if (b <= a) return alert('最大需大于最小') } catch { return alert('金额格式错误') }
+    setRowAuto(prev => ({ ...prev, [addr]: { ...(prev[addr]||{}), saving: true } }))
+    try {
+      const headers: Record<string,string> = { 'Content-Type':'application/json' }
+      { const ak = getApiKey(); if (ak) headers['x-api-key'] = ak }
+      const body = {
+        seriesKey: st.seriesKey,
+        enabled: !!st.enabled,
+        nextMin: toUnits(st.minHuman, st.decimals).toString(),
+        nextMax: toUnits(st.maxHuman, st.decimals).toString()
+      }
+      const r = await fetch(`${BACKEND_URL}/api/auto-next/upsert`, { method:'POST', headers, body: JSON.stringify(body) })
+      const j = await r.json().catch(()=>null)
+      if (!r.ok || !j?.ok) throw new Error(j?.error || 'save_failed')
+      alert('已保存自动下一期设置')
+    } catch (e:any) { alert(e?.message || String(e)) }
+    finally { setRowAuto(prev => ({ ...prev, [addr]: { ...(prev[addr]||{}), saving: false } })) }
+  }
+
+  const stopRowAuto = async (addr: string) => {
+    const st = rowAuto[addr]; if (!st || !st.seriesKey) return
+    try {
+      const headers: Record<string,string> = { 'Content-Type':'application/json' }
+      { const ak = getApiKey(); if (ak) headers['x-api-key'] = ak }
+      const r = await fetch(`${BACKEND_URL}/api/auto-next/stop`, { method:'POST', headers, body: JSON.stringify({ seriesKey: st.seriesKey }) })
+      const j = await r.json().catch(()=>null)
+      if (!r.ok || !j?.ok) throw new Error(j?.error || 'stop_failed')
+      alert('已停止该系列自动下一期')
+      setRowAuto(prev => ({ ...prev, [addr]: { ...(prev[addr]||{}), enabled: false } }))
+    } catch (e:any) { alert(e?.message || String(e)) }
+  }
+
   const refreshAlias = async (addr: string) => {
     if (!BACKEND_URL || !FACTORY_ADDRESS) return
     setAliasBusy(addr)
@@ -659,7 +745,8 @@ export default function App(){
           <div>
             {pools.length === 0 && <div>暂无活动</div>}
             {pools.map(p => (
-              <div key={p.address} className="row" style={{alignItems:'center', padding:'8px 0', borderTop:'1px solid #eee'}}>
+              <div key={p.address} style={{padding:'8px 0', borderTop:'1px solid #eee'}}>
+                <div className="row" style={{alignItems:'center'}}>
                 <div style={{flex:1}}>
                   <div style={{fontWeight:600}}>{p.address}</div>
                   <div style={{fontSize:12,color:'#555'}}>
@@ -684,7 +771,32 @@ export default function App(){
                   <button style={{marginRight:8}} onClick={()=>loadLogs(p.address)}>查看日志</button>
                   <button style={{marginRight:8}} disabled={aliasBusy===p.address} onClick={()=>refreshAlias(p.address)}>{aliasBusy===p.address ? '刷新中...' : '刷新别名'}</button>
                   <button disabled={canceling===p.address || p.info.drawn || !p.canDelete} onClick={()=>adminCancel(p.address)}>{canceling===p.address ? '处理中...' : (p.canDelete ? '删除并退款' : '不支持删除')}</button>
+                  <button style={{marginLeft:8}} onClick={async ()=>{ const nv = expanded===p.address? null : p.address; setExpanded(nv); if (nv) await ensureRowLoaded(p.address) }}>{expanded===p.address? '收起' : '展开'}</button>
                 </div>
+                </div>
+                {expanded===p.address && (
+                  <div style={{marginTop:8, padding:'10px 12px', background:'#fafafa', border:'1px dashed #e5e7eb', borderRadius:8}}>
+                    <div style={{fontWeight:600, marginBottom:6}}>自动下一期配置</div>
+                    <div style={{fontSize:12,color:'#666',marginBottom:8}}>按系列名管理：系统会根据该活动标题（去掉“第N期/Period N”）识别系列。</div>
+                    <div className="row" style={{marginBottom:8}}>
+                      <input style={{flex:1}} placeholder="系列名" value={rowAuto[p.address]?.seriesKey||''} onChange={e=>setRowAuto(prev=>({...prev, [p.address]:{...(prev[p.address]||{enabled:true,decimals:18,minHuman:'',maxHuman:''}), seriesKey:e.target.value}}))} />
+                      <label style={{display:'flex',alignItems:'center',gap:6, marginLeft:8}}>
+                        <input type="checkbox" checked={!!rowAuto[p.address]?.enabled} onChange={e=>setRowAuto(prev=>({...prev, [p.address]:{...(prev[p.address]||{}), enabled:e.target.checked}}))} /> 启用
+                      </label>
+                      <div style={{width:140, marginLeft:8}}>
+                        <input type="number" value={rowAuto[p.address]?.decimals ?? 18} onChange={e=>setRowAuto(prev=>({...prev, [p.address]:{...(prev[p.address]||{}), decimals:Number(e.target.value)||18}}))} placeholder="小数位" />
+                      </div>
+                    </div>
+                    <div className="row" style={{marginBottom:8}}>
+                      <input style={{flex:1}} placeholder="下一期最小金额（人类单位）" value={rowAuto[p.address]?.minHuman || ''} onChange={e=>setRowAuto(prev=>({...prev, [p.address]:{...(prev[p.address]||{}), minHuman:e.target.value}}))} />
+                      <input style={{flex:1}} placeholder="下一期最大金额" value={rowAuto[p.address]?.maxHuman || ''} onChange={e=>setRowAuto(prev=>({...prev, [p.address]:{...(prev[p.address]||{}), maxHuman:e.target.value}}))} />
+                    </div>
+                    <div>
+                      <button disabled={rowAuto[p.address]?.saving} onClick={()=>saveRowAuto(p.address)}>{rowAuto[p.address]?.saving ? '保存中...' : '保存并启用'}</button>
+                      <button style={{marginLeft:8}} onClick={()=>stopRowAuto(p.address)}>停止该系列下一期</button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -712,6 +824,7 @@ export default function App(){
       )}
 
       <IndexManager />
+      <AutoNextManager />
       <CloneTool />
       <MetaFixer />
       <SupportAdminFloating />
@@ -802,6 +915,148 @@ function IndexManager() {
             <button style={{marginLeft:8}} onClick={()=>remove(k)}>删除</button>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ====== 自动下一期配置（按“系列名/基名”管理） ======
+function AutoNextManager(){
+  const backend = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000').trim()
+  const apiKeyEnv = (import.meta.env.VITE_BACKEND_API_KEY || '').trim()
+  const getApiKey = () => {
+    const k = (localStorage.getItem('admin_api_key') || apiKeyEnv || '').trim()
+    return /^[\x20-\x7E]*$/.test(k) ? k : ''
+  }
+
+  const [seriesKey, setSeriesKey] = useState('')
+  const [poolForDetect, setPoolForDetect] = useState('')
+  const [enabled, setEnabled] = useState(true)
+  const [decimals, setDecimals] = useState(18)
+  const [minHuman, setMinHuman] = useState('')
+  const [maxHuman, setMaxHuman] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const normalizeTitle = (s?: string) => {
+    if (!s) return 'untitled'
+    let x = String(s)
+    x = x.replace(/第\s*\d+\s*期/gi, '')
+    x = x.replace(/period\s*\d+/gi, '')
+    x = x.replace(/\(test\)/gi, '').replace(/test use/gi, '')
+    x = x.trim()
+    return x || 'untitled'
+  }
+
+  const detectFromPool = async () => {
+    const addr = poolForDetect.trim()
+    if (!addr) return alert('请输入 Pool 地址')
+    setLoading(true)
+    try {
+      const lower = addr.toLowerCase()
+      // 1) 先从别名读取
+      const tryFetch = async (url: string) => {
+        try { const r = await fetch(url, { cache: 'no-store' as RequestCache }); if (r.ok) return await r.json().catch(()=>null) } catch {}
+        return null
+      }
+      let meta: any = await tryFetch(`${backend}/meta/${lower}.json`)
+      // 2) 兜底读取 index
+      if (!meta) {
+        try {
+          const r = await fetch(`${backend}/api/meta/index`)
+          if (r.ok) {
+            const j = await r.json().catch(()=>null) as Record<string,string>|null
+            const uri = j?.[lower]
+            if (uri) meta = await tryFetch(uri)
+          }
+        } catch {}
+      }
+      if (!meta || !meta.title) { alert('无法读取该池的元数据，检查是否已写入别名或索引'); return }
+      const key = normalizeTitle(meta.title)
+      setSeriesKey(key)
+      // 读取现有配置
+      try {
+        const headers: Record<string,string> = {}
+        { const k = getApiKey(); if (k) headers['x-api-key'] = k }
+        const r = await fetch(`${backend}/api/auto-next`, { headers })
+        const j = await r.json().catch(()=>null)
+        const cfg = j?.series?.[key]
+        if (cfg) {
+          setEnabled(cfg.enabled !== false)
+          // 以人类单位显示（需填写小数位）
+          if (cfg.nextMin) setMinHuman(String(Number(cfg.nextMin) / 10**decimals))
+          if (cfg.nextMax) setMaxHuman(String(Number(cfg.nextMax) / 10**decimals))
+        } else {
+          setEnabled(true)
+          setMinHuman('')
+          setMaxHuman('')
+        }
+      } catch {}
+    } finally { setLoading(false) }
+  }
+
+  const save = async () => {
+    if (!seriesKey) return alert('请先填写系列名或通过池地址识别')
+    if (!minHuman || !maxHuman) return alert('请填写下一期的最小/最大金额')
+    try {
+      const min = toUnits(minHuman, decimals).toString()
+      const max = toUnits(maxHuman, decimals).toString()
+      if (BigInt(max) <= BigInt(min)) return alert('最大金额必须大于最小金额')
+    } catch { return alert('金额格式不正确') }
+    setSaving(true)
+    try {
+      const headers: Record<string,string> = { 'Content-Type':'application/json' }
+      { const k = getApiKey(); if (k) headers['x-api-key'] = k }
+      const body = {
+        seriesKey,
+        enabled: !!enabled,
+        nextMin: toUnits(minHuman, decimals).toString(),
+        nextMax: toUnits(maxHuman, decimals).toString()
+      }
+      const r = await fetch(`${backend}/api/auto-next/upsert`, { method:'POST', headers, body: JSON.stringify(body) })
+      const j = await r.json().catch(()=>null)
+      if (!r.ok || !j?.ok) throw new Error(j?.error || 'save_failed')
+      alert('已保存（并启用）该系列的自动下一期配置')
+    } catch (e:any) { alert(e?.message || String(e)) }
+    finally { setSaving(false) }
+  }
+
+  const stop = async () => {
+    if (!seriesKey) return alert('请先填写系列名')
+    const headers: Record<string,string> = { 'Content-Type':'application/json' }
+    { const k = getApiKey(); if (k) headers['x-api-key'] = k }
+    try {
+      const r = await fetch(`${backend}/api/auto-next/stop`, { method:'POST', headers, body: JSON.stringify({ seriesKey }) })
+      const j = await r.json().catch(()=>null)
+      if (!r.ok || !j?.ok) throw new Error(j?.error || 'stop_failed')
+      alert('已停止该系列的自动下一期')
+    } catch (e:any) { alert(e?.message || String(e)) }
+  }
+
+  return (
+    <div className="card" style={{marginTop:16}}>
+      <h3>自动下一期配置</h3>
+      <div style={{fontSize:12,color:'#666',marginBottom:8}}>按“系列名（标题去掉第N期/Period N 后的基名）”配置。开奖后系统会克隆图片与文案，并在10分钟后创建下一期。</div>
+      <div className="row" style={{marginBottom:8}}>
+        <input style={{flex:1}} placeholder="系列名（如：iPhone 15 Pro）" value={seriesKey} onChange={e=>setSeriesKey(e.target.value)} />
+        <input style={{flex:1}} placeholder="辅助：从该池地址识别系列名" value={poolForDetect} onChange={e=>setPoolForDetect(e.target.value)} />
+        <button disabled={loading} onClick={detectFromPool}>{loading?'识别中...':'从池识别'}</button>
+      </div>
+      <div className="row" style={{marginBottom:8}}>
+        <label style={{display:'flex',alignItems:'center',gap:6}}>
+          <input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)} /> 启用自动下一期
+        </label>
+        <div style={{width:160, marginLeft:8}}>
+          <input type="number" value={decimals} onChange={e=>setDecimals(Number(e.target.value)||18)} placeholder="小数位（如 18）" />
+        </div>
+      </div>
+      <div className="row" style={{marginBottom:8}}>
+        <input style={{flex:1}} placeholder="下一期最小金额（人类单位，如 12）" value={minHuman} onChange={e=>setMinHuman(e.target.value)} />
+        <input style={{flex:1}} placeholder="下一期最大金额（如 24）" value={maxHuman} onChange={e=>setMaxHuman(e.target.value)} />
+      </div>
+      <div>
+        <button disabled={saving} onClick={save}>{saving?'保存中...':'保存并启用'}</button>
+        <button style={{marginLeft:8}} onClick={stop}>停止该系列下一期</button>
       </div>
     </div>
   )
