@@ -232,49 +232,45 @@ export function usePools() {
       const getLogsBatched = async (
         prov: any,
         filter: { address: string, topics: (string|null)[] },
-        opts?: { fromBlock?: number, toBlock?: number, batchSize?: number, maxRetriesPerRange?: number }
+        opts?: { fromBlock?: number, toBlock?: number, batchSize?: number, maxSpanBlocks?: number }
       ) => {
         const latest = opts?.toBlock ?? await prov.getBlockNumber()
-        let start = Math.max(0, opts?.fromBlock ?? 0)
-        const out: any[] = []
-        let baseStep = opts?.batchSize ?? 5_000 // 起步更小，避免 BSC testnet 直接拒绝
-        const maxRetries = opts?.maxRetriesPerRange ?? 6
+        // 若未提供部署块，避免一次扫到创世：限制最大回溯跨度（默认 1,500,000 块，大约几天）
+        const fromInit = Math.max(0, opts?.fromBlock ?? Math.max(0, latest - (opts?.maxSpanBlocks ?? 1_500_000)))
+        let start = fromInit
+        const logs: any[] = []
+        let step = Math.min(opts?.batchSize ?? 25_000, 50_000) // 初始较保守
+        const MAX_STEP = 80_000
+        const MIN_STEP = 200
+        let attemptsForChunk = 0
+        let delayMs = 300
         while (start <= latest) {
-          let step = baseStep
-          let attempt = 0
-          // 自适应区间：如果距离终点很近就直接收尾
-          if (start + step > latest) step = latest - start
           const end = Math.min(start + step, latest)
-          while (true) {
-            try {
-              const part = await prov.getLogs({ ...filter, fromBlock: start, toBlock: end })
-              out.push(...part)
-              // 成功：适度增大基础窗口（上限 25k）
-              if (baseStep < 25_000) baseStep = Math.min(25_000, Math.floor(baseStep * 1.35))
-              break
-            } catch (e: any) {
-              const msg = e?.message || ''
-              const code = e?.code
-              // 速率/范围相关错误：缩小 step 并重试；若已经极小则退回继续向后推进
-              if (code === -32005 || /limit exceeded|block range|query timeout|missing response/i.test(msg)) {
-                attempt++
-                if (attempt >= maxRetries) {
-                  // 放弃扩大：记录后继续（避免卡死）
-                  console.warn('[getLogsBatched] give up range', { start, end, attempts: attempt, msg })
-                  break
-                }
-                // 缩减基础窗口（不能低于 200）
-                baseStep = Math.max(200, Math.floor(baseStep / 2))
-                await new Promise(r=>setTimeout(r, 300 + Math.floor(Math.random()*200)))
-                continue
-              }
-              // 其它错误直接抛出
-              throw e
+          try {
+            const part = await prov.getLogs({ ...filter, fromBlock: start, toBlock: end })
+            logs.push(...part)
+            start = end + 1
+            attemptsForChunk = 0
+            delayMs = 300
+            if (step < MAX_STEP) step = Math.min(MAX_STEP, Math.floor(step * 1.4)) // 成功后缓慢增大
+          } catch (e: any) {
+            const raw = (e && typeof e === 'object') ? JSON.stringify(e) : ''
+            const msg = e?.message || raw || ''
+            const code = e?.code
+            const isRate = code === -32005 || /rate limit|limit exceeded|block range|query timeout|eth_getLogs/i.test(msg)
+            if (isRate) {
+              // 缩小 step + 回退等待；达到最小后仍失败则抛出
+              attemptsForChunk++
+              if (attemptsForChunk > 8) throw e
+              step = Math.max(MIN_STEP, Math.floor(step / 2))
+              await new Promise(r => setTimeout(r, delayMs))
+              delayMs = Math.min(4000, Math.floor(delayMs * 1.6))
+              continue
             }
+            throw e
           }
-          start = end + 1
         }
-        return out
+        return logs
       }
 
       // 1) 读取 Factory 的 PoolCreated 日志以获得 metadataURI 与 sortOrder。
