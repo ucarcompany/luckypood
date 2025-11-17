@@ -429,7 +429,9 @@ export function usePools() {
           const iface = new Interface(PoolArtifact.abi as any)
           const ev = iface.getEvent('DrawFulfilled')
           const topic0 = (ev as any).topicHash || (iface as any).getEventTopic?.('DrawFulfilled')
-          const logs = await getLogsBatched(prov, { address: poolAddr, topics: [topic0] }, { fromBlock: 0 })
+          const latest = await prov.getBlockNumber()
+          const from = Math.max(FACTORY_DEPLOY_BLOCK || 0, latest - 1_500_000) // 限制最大回溯范围，避免 -32005
+          const logs = await getLogsBatched(prov, { address: poolAddr, topics: [topic0] }, { fromBlock: from, toBlock: latest })
           if (logs.length === 0) return undefined
           const last = logs[logs.length-1]
           const blk = await prov.getBlock(last.blockNumber)
