@@ -277,24 +277,45 @@ export function usePools() {
       //    为了加速首屏，非静默加载时跳过该重操作，改由后续的静默刷新补齐。
       let metaByPool: Record<string,{metadataURI?:string, sortOrder?:number, indexURI?: string}> = {}
       if (opts?.silent) {
-        try {
-          const iface = new Interface(FactoryArtifact.abi)
-          const eventFrag = iface.getEvent('PoolCreated')
-          const topic0 = (eventFrag as any).topicHash || (eventFrag as any).topic || (iface as any).getEventTopic?.('PoolCreated')
-          const startBlock = FACTORY_DEPLOY_BLOCK || 0
-          const logs = await getLogsBatched(readProv, { address: FACTORY_ADDRESS, topics: [topic0] }, { fromBlock: startBlock })
-          for (const log of logs) {
-            const parsed = iface.parseLog({ topics: log.topics, data: log.data })
-            if (parsed && parsed.args) {
-              const pool = String(parsed.args[0]).toLowerCase()
-              const metadataURI0 = String(parsed.args[3] || '')
-              const metadataURI = rewriteToBackendOrigin(metadataURI0)
-              const sortOrder = Number(parsed.args[4])
-              metaByPool[pool] = { metadataURI, sortOrder }
+        // 优先尝试后端聚合缓存，失败再回退链上扫描
+        let fetchedFromBackend = false
+        if (BACKEND_URL) {
+          try {
+            const r = await fetch(`${BACKEND_URL}/api/factory/pool-created?ts=${Date.now()}`)
+            if (r.ok) {
+              const j = await r.json().catch(()=>null)
+              if (j && j.ok && Array.isArray(j.events)) {
+                for (const ev of j.events) {
+                  const pool = String(ev.pool||'').toLowerCase()
+                  const metadataURI = rewriteToBackendOrigin(String(ev.metadataURI||''))
+                  const sortOrder = Number(ev.sortOrder||0)
+                  if (pool) metaByPool[pool] = { metadataURI, sortOrder }
+                }
+                fetchedFromBackend = true
+              }
             }
+          } catch {}
+        }
+        if (!fetchedFromBackend) {
+          try {
+            const iface = new Interface(FactoryArtifact.abi)
+            const eventFrag = iface.getEvent('PoolCreated')
+            const topic0 = (eventFrag as any).topicHash || (eventFrag as any).topic || (iface as any).getEventTopic?.('PoolCreated')
+            const startBlock = FACTORY_DEPLOY_BLOCK || 0
+            const logs = await getLogsBatched(readProv, { address: FACTORY_ADDRESS, topics: [topic0] }, { fromBlock: startBlock })
+            for (const log of logs) {
+              const parsed = iface.parseLog({ topics: log.topics, data: log.data })
+              if (parsed && parsed.args) {
+                const pool = String(parsed.args[0]).toLowerCase()
+                const metadataURI0 = String(parsed.args[3] || '')
+                const metadataURI = rewriteToBackendOrigin(metadataURI0)
+                const sortOrder = Number(parsed.args[4])
+                metaByPool[pool] = { metadataURI, sortOrder }
+              }
+            }
+          } catch (e) {
+            console.warn('read PoolCreated logs failed', e)
           }
-        } catch (e) {
-          console.warn('read PoolCreated logs failed', e)
         }
       }
 

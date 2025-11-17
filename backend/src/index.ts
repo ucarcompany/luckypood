@@ -10,6 +10,7 @@ import fs from 'fs';
 import http from 'http';
 import https from 'https';
 import { utils as ethersUtils, providers as ethersProviders } from 'ethers';
+import { createPoolCreatedAggregator } from './logsPoolCreated';
 // Use ethers v5 imports
 // 注意：已撤回链上聚合 /api/pools 端点，移除 ethers 相关依赖（若未来需要再恢复）。
 
@@ -25,10 +26,30 @@ const SSL_PFX_PASSPHRASE = process.env.SSL_PFX_PASSPHRASE || '';
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
 const METADATA_DIR = process.env.METADATA_DIR || path.join(process.cwd(), 'metadata');
 const LOG_DIR = process.env.LOG_DIR || path.join(process.cwd(), 'logs');
+const FACTORY_ADDRESS = (process.env.FACTORY_ADDRESS || '').trim();
+const FACTORY_DEPLOY_BLOCK = Number(process.env.FACTORY_DEPLOY_BLOCK || '0') || 0;
+const RPC_URL = process.env.RPC_URL || 'https://data-seed-prebsc-1-s1.binance.org:8545/';
 
 // Ensure directories exist
 for (const dir of [UPLOAD_DIR, METADATA_DIR, LOG_DIR]) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+// ---- Factory PoolCreated 日志缓存聚合（减少前端大范围 getLogs 速率限制） ----
+let poolCreatedAgg: ReturnType<typeof createPoolCreatedAggregator> | null = null;
+if (FACTORY_ADDRESS) {
+  try {
+    poolCreatedAgg = createPoolCreatedAggregator({
+      factory: FACTORY_ADDRESS,
+      deployBlock: FACTORY_DEPLOY_BLOCK,
+      rpcUrl: RPC_URL,
+      cacheDir: METADATA_DIR,
+      intervalMs: 90_000
+    });
+    console.log('[logs-cache] PoolCreated aggregator started from block', FACTORY_DEPLOY_BLOCK);
+  } catch (e: any) {
+    console.error('[logs-cache] init failed', e?.message || e);
+  }
 }
 
 // Multer storage
@@ -85,6 +106,21 @@ app.use('/meta', express.static(METADATA_DIR, {
 
 // Health check
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
+
+// Factory PoolCreated logs cache endpoints (reduce front-end chain scanning)
+app.get('/api/factory/pool-created', (req, res) => {
+  if (!poolCreatedAgg) return res.status(503).json({ error: 'aggregator_unavailable' });
+  const events = poolCreatedAgg.getEvents();
+  res.json({ ok: true, count: events.length, lastScannedBlock: poolCreatedAgg.getLastScannedBlock(), events });
+});
+app.post('/api/factory/pool-created/scan', (req, res) => {
+  if (!poolCreatedAgg) return res.status(503).json({ error: 'aggregator_unavailable' });
+  poolCreatedAgg.forceScan().then(() => {
+    res.json({ ok: true, lastScannedBlock: poolCreatedAgg!.getLastScannedBlock(), count: poolCreatedAgg!.getEvents().length });
+  }).catch(e => {
+    res.status(500).json({ error: 'scan_failed', message: e?.message || String(e) });
+  });
+});
 
 // Friendly landing page for root path
 app.get('/', (_req, res) => {
