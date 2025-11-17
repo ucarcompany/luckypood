@@ -56,18 +56,26 @@ if (FACTORY_ADDRESS) {
 const storage = multer.diskStorage({
   destination: (_req: any, _file: any, cb: any) => cb(null, UPLOAD_DIR),
   filename: (_req: any, file: any, cb: any) => {
-    const ext = path.extname(file.originalname);
-    const base = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9-_]/g, '_');
+    const ext = path.extname(file.originalname || '').slice(0,10);
+    const safeBase = path.basename(file.originalname || 'file', ext).replace(/[^a-zA-Z0-9-_]/g, '_') || 'file';
     const stamp = Date.now();
-    cb(null, `${base}_${stamp}${ext}`);
+    cb(null, `${safeBase}_${stamp}${ext || ''}`);
   }
 });
+// 放宽上传策略：接受常见图片与未识别类型（部分代理会丢失 mime），并提升大小上限到 10MB。
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req: any, file: any, cb: any) => {
-    if (file?.mimetype && String(file.mimetype).startsWith('image/')) return cb(null, true);
-    return cb(new Error('invalid_file_type'));
+    try {
+      const mime = String(file?.mimetype || '').toLowerCase();
+      if (!mime || mime === 'application/octet-stream') return cb(null, true); // 代理丢失 mime 时放行
+      if (mime.startsWith('image/')) return cb(null, true);
+      // 允许 json / text 以支持测试与元数据直接上传
+      if (mime.includes('json') || mime.startsWith('text/')) return cb(null, true);
+      console.warn('[upload] reject type', mime, file?.originalname);
+      return cb(new Error('invalid_file_type'));
+    } catch (e) { return cb(new Error('invalid_file_type')); }
   }
 });
 
@@ -157,11 +165,16 @@ function requireApiKey(req: express.Request, res: express.Response, next: expres
 }
 
 // Upload endpoint
-app.post('/api/upload', requireApiKey, upload.single('file'), (req, res) => {
+app.post('/api/upload', requireApiKey, (req, res, next) => {
+  // 为了兼容某些代理对 multipart 的处理，提前设置 no-store
+  try { res.setHeader('Cache-Control', 'no-store'); } catch {}
+  next();
+}, upload.single('file'), (req, res) => {
   const mreq = req as any;
   if (!mreq.file) return res.status(400).json({ error: 'no_file' });
   const url = `${BASE_URL}/uploads/${encodeURIComponent(mreq.file.filename)}`;
-  return res.json({ url, filename: mreq.file.filename, size: mreq.file.size, mime: mreq.file.mimetype });
+  console.log('[upload] stored', mreq.file.originalname, '->', mreq.file.filename, mreq.file.mimetype, mreq.file.size);
+  return res.json({ url, filename: mreq.file.filename, size: mreq.file.size, mime: mreq.file.mimetype || '' });
 });
 
 // Metadata endpoint

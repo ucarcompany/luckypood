@@ -3,7 +3,7 @@
 module.exports = {
   apps: [
     {
-      name: 'luckypood-backend',
+      name: 'lucky-backend', // 统一进程名，避免与旧名混淆
       script: 'dist/index.js',
       cwd: __dirname,
       instances: 1,
