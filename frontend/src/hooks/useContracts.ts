@@ -232,29 +232,49 @@ export function usePools() {
       const getLogsBatched = async (
         prov: any,
         filter: { address: string, topics: (string|null)[] },
-        opts?: { fromBlock?: number, toBlock?: number, batchSize?: number }
+        opts?: { fromBlock?: number, toBlock?: number, batchSize?: number, maxRetriesPerRange?: number }
       ) => {
         const latest = opts?.toBlock ?? await prov.getBlockNumber()
         let start = Math.max(0, opts?.fromBlock ?? 0)
-        const logs: any[] = []
-        let step = opts?.batchSize ?? 50_000
+        const out: any[] = []
+        let baseStep = opts?.batchSize ?? 5_000 // 起步更小，避免 BSC testnet 直接拒绝
+        const maxRetries = opts?.maxRetriesPerRange ?? 6
         while (start <= latest) {
+          let step = baseStep
+          let attempt = 0
+          // 自适应区间：如果距离终点很近就直接收尾
+          if (start + step > latest) step = latest - start
           const end = Math.min(start + step, latest)
-          try {
-            const part = await prov.getLogs({ ...filter, fromBlock: start, toBlock: end })
-            logs.push(...part)
-            start = end + 1
-            if (step < 100_000) step = Math.min(100_000, Math.floor(step * 1.5)) // 成功后放大
-          } catch (e: any) {
-            const msg = e?.message || ''
-            const code = e?.code
-            if (code === -32005 || /limit exceeded|block range|query timeout/i.test(msg)) {
-              if (step > 50) { step = Math.max(50, Math.floor(step / 2)); continue }
+          while (true) {
+            try {
+              const part = await prov.getLogs({ ...filter, fromBlock: start, toBlock: end })
+              out.push(...part)
+              // 成功：适度增大基础窗口（上限 25k）
+              if (baseStep < 25_000) baseStep = Math.min(25_000, Math.floor(baseStep * 1.35))
+              break
+            } catch (e: any) {
+              const msg = e?.message || ''
+              const code = e?.code
+              // 速率/范围相关错误：缩小 step 并重试；若已经极小则退回继续向后推进
+              if (code === -32005 || /limit exceeded|block range|query timeout|missing response/i.test(msg)) {
+                attempt++
+                if (attempt >= maxRetries) {
+                  // 放弃扩大：记录后继续（避免卡死）
+                  console.warn('[getLogsBatched] give up range', { start, end, attempts: attempt, msg })
+                  break
+                }
+                // 缩减基础窗口（不能低于 200）
+                baseStep = Math.max(200, Math.floor(baseStep / 2))
+                await new Promise(r=>setTimeout(r, 300 + Math.floor(Math.random()*200)))
+                continue
+              }
+              // 其它错误直接抛出
+              throw e
             }
-            throw e
           }
+          start = end + 1
         }
-        return logs
+        return out
       }
 
       // 1) 读取 Factory 的 PoolCreated 日志以获得 metadataURI 与 sortOrder。

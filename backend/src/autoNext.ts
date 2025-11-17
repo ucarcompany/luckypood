@@ -77,7 +77,35 @@ async function getSortOrderOfPool(prov: providers.Provider, pool: string): Promi
     // 查询该地址对应的日志（从最近块向前限制范围，节省开销）
     const latest = await prov.getBlockNumber()
     const from = Math.max(0, latest - 2_000_000)
-    const logs = await prov.getLogs({ address: FACTORY_ADDRESS, topics: [topic0], fromBlock: from })
+    // 分块 + 重试，避免 -32005 速率限制
+    const chunkedLogs: any[] = []
+    let cursor = from
+    let step = 20_000
+    while (cursor <= latest) {
+      const end = Math.min(cursor + step, latest)
+      let attempt = 0
+      while (true) {
+        try {
+          const part = await prov.getLogs({ address: FACTORY_ADDRESS, topics: [topic0], fromBlock: cursor, toBlock: end })
+          chunkedLogs.push(...part)
+          if (step < 40_000) step = Math.min(40_000, Math.floor(step * 1.4))
+          break
+        } catch (e:any) {
+          const msg = e?.message || ''
+          const code = e?.code
+          if (code === -32005 || /limit exceeded|block range|query timeout|missing response/i.test(msg)) {
+            attempt++
+            if (attempt >= 5) { console.warn('[autoNext:getSortOrderOfPool] give up range', { cursor, end, msg }); break }
+            step = Math.max(500, Math.floor(step/2))
+            await new Promise(r=>setTimeout(r, 300 + Math.floor(Math.random()*200)))
+            continue
+          }
+          throw e
+        }
+      }
+      cursor = end + 1
+    }
+    const logs = chunkedLogs
     for (const l of logs) {
       try {
         const p = iface.parseLog({ topics: l.topics, data: l.data }) as any
