@@ -54,13 +54,8 @@ export default function Transparency() {
           } catch {}
         }
       } catch (e:any) {
-        const raw = e?.message || String(e)
-        // 统一转成更友好的提示
-        if (/could not coalesce|limit exceeded|block range|query timeout/i.test(raw)) {
-          setError('节点繁忙，正在同步区块数据，请1-2分钟后再试。')
-        } else {
-          setError(raw)
-        }
+        // 统一为温和提示，不显示底层 RPC 细节
+        setError('节点繁忙，正在同步区块数据，请稍后再试。')
       }
     })()
   }, [])
@@ -84,7 +79,7 @@ export default function Transparency() {
           </div>
         )}
       </div>
-      {error && <div style={{color:'tomato', marginTop:8}}>错误：{error}</div>}
+      {error && <div style={{color:'#64748b', marginTop:8}}>提示：{error}</div>}
     </div>
   )
 }

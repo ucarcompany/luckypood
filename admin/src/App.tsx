@@ -425,7 +425,30 @@ export default function App(){
       const body: any = { pool: addr }
       if (uri) body.uri = uri
       const r = await fetch(`${BACKEND_URL}/api/meta/alias`, { method:'POST', headers, body: JSON.stringify(body) })
-      if (!r.ok) throw new Error('alias 写入失败')
+      if (!r.ok) {
+        // 读取后端返回的错误细节
+        let detail = ''
+        try { const j = await r.json(); if (j?.error) detail = `: ${j.error}` } catch {}
+        // 回退方案：尝试链上恢复后再写别名
+        try {
+          const recoverBody: any = { pool: addr }
+          if (FACTORY_ADDRESS) recoverBody.factory = FACTORY_ADDRESS
+          if (FACTORY_DEPLOY_BLOCK) recoverBody.fromBlock = FACTORY_DEPLOY_BLOCK
+          const r2 = await fetch(`${BACKEND_URL}/api/meta/recover-one`, { method:'POST', headers, body: JSON.stringify(recoverBody) })
+          const j2 = await r2.json().catch(()=>null)
+          if (r2.ok && j2?.ok) {
+            // recover-one 已经完成 index 与 alias 的修复
+            const aliasUri = `${BACKEND_URL}/meta/${addr.toLowerCase()}.json`
+            setPools(prev => prev.map(x => x.address===addr ? ({
+              ...x,
+              alias: { status: 'ok', aliasUri, indexUri: aliasUri }
+            }) : x))
+            alert('已通过链上恢复并写入别名')
+            return
+          }
+        } catch {}
+        throw new Error('alias 写入失败' + detail)
+      }
       // 刷新该池的别名状态
       const aliasUri = `${BACKEND_URL}/meta/${lower}.json`
       let aliasExists = false

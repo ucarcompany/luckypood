@@ -598,11 +598,13 @@ export function usePools() {
   // 成功获取列表时清除旧错误（包括之前的 Provider 未就绪提示），即使过滤后为空也应该清除
   if (error) { setError(null); setErrorKind(null) }
     } catch (e:any) {
-      const msg = e?.message || String(e)
-      if (!opts?.silent) { setError(msg); setErrorKind('other') }
-      else {
-        console.warn('[pools] silent refresh failed:', msg)
-        ;(window as any).__toast?.show?.(msg, 'error')
+      // 不再把底层 RPC 错误文案直接显示到页面，统一用温和提示文案
+      if (!opts?.silent) {
+        setError('provider_final_hint');
+        setErrorKind('final')
+      } else {
+        // 静默刷新失败仅做调试日志，避免打扰用户
+        console.warn('[pools] silent refresh failed')
       }
     } finally {
       if (!opts?.silent) setLoading(false)
