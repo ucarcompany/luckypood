@@ -460,7 +460,11 @@ export default function App(){
     const headers: Record<string,string> = { 'Content-Type': 'application/json' }
     const API_KEY = getApiKey(); if (API_KEY) headers['x-api-key'] = API_KEY
     const res = await fetch(`${BACKEND_URL}/api/metadata`, { method: 'POST', headers, body: JSON.stringify(body) })
-    if (!res.ok) throw new Error('Create metadata failed')
+    if (!res.ok) {
+      let msg = 'Create metadata failed'
+      try { const j = await res.json(); if (j?.error) msg += `: ${j.error}` } catch {}
+      throw new Error(msg)
+    }
     const data = await res.json()
     return data.uri as string
   }

@@ -92,6 +92,8 @@ app.use(helmet({
 }));
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
+// 兼容表单式提交 JSON（某些客户端可能用 x-www-form-urlencoded）
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(morgan('combined'));
 // Basic rate limiting（仅作用于 /api 路径，避免静态元数据与图片频繁读取触发 429）
 const limiter = rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false });
