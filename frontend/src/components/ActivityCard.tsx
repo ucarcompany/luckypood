@@ -8,6 +8,7 @@ import { useToast } from './ToastProvider'
 import { postLog } from '../lib/log'
 import { DEFAULT_RPC, BACKEND_URL } from '../config'
 import { Interface, JsonRpcProvider } from 'ethers'
+import WishingWell from './WishingWell'
 
 const ERC20_ABI = [
   { inputs: [], name: 'decimals', outputs: [{ type: 'uint8' }], stateMutability: 'view', type: 'function' },
@@ -115,6 +116,7 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
 
   const [status, setStatus] = useState<string>('')
   const [ticketRange, setTicketRange] = useState<{start:number,end:number} | null>(null)
+  const [dropTrigger, setDropTrigger] = useState(0)
 
   const count = useMemo(() => {
     const n = Number(countStr)
@@ -144,6 +146,7 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
       // refresh user tickets
       const tickets: bigint = await pool.ticketsByUser(account)
       setUserTickets(Number(tickets))
+      setDropTrigger(n => n + 1)
   setStatus(t('status_success'))
   toast.show(<span>{t('participate_success')}，<a href={`https://testnet.bscscan.com/tx/${tx2.hash}`} target="_blank" rel="noreferrer">{t('view_on_bscscan')}</a></span>, 'success')
       postLog({ type:'participate', pool: info.address, txHash: tx2.hash, address: account, count })
@@ -201,6 +204,10 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
     const countdownEnded = deadline > 0 && now >= deadline
     return reachedCap || countdownEnded
   }, [info, now])
+
+  const isFull = useMemo(() => {
+    return (info.maxFill > 0n && info.totalRaised >= info.maxFill) || info.minReached
+  }, [info])
 
   const drawStatusMessage = () => {
     if (info.drawn) return t('draw_msg_drawn')
@@ -319,8 +326,14 @@ export default function ActivityCard({ info, onRefresh }: { info: PoolInfo, onRe
     })()
   }, [account, provider, info.address])
   return (
-    <div className={`card ${expanded ? 'expanded' : ''}`} style={{padding:16, marginBottom:16}}>
-      <div className="head-row clickable" onClick={()=> setExpanded(v=>!v)}>
+    <div className="card">
+      <WishingWell 
+        progress={progress} 
+        isFull={isFull} 
+        isDrawn={info.drawn} 
+        triggerDrop={dropTrigger} 
+      />
+      <div className="card-header">
         {imgSrc && imgVisible ? (
           <img
             className="thumb"

@@ -91,6 +91,7 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false
 }));
 app.use(cors({ origin: true, credentials: true }));
+app.options('*', cors()); // Enable pre-flight for all routes
 app.use(express.json({ limit: '1mb' }));
 // 兼容表单式提交 JSON（某些客户端可能用 x-www-form-urlencoded）
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));

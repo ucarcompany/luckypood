@@ -54,8 +54,9 @@ export default function Transparency() {
           } catch {}
         }
       } catch (e:any) {
-        // 统一为温和提示，不显示底层 RPC 细节
-        setError('节点繁忙，正在同步区块数据，请稍后再试。')
+        // 统一为温和提示，不显示底层 RPC 细节，且不显示红字
+        console.warn('Transparency sync error:', e)
+        // setError('节点繁忙，正在同步区块数据，请稍后再试。') // 用户要求不显示红字错误，故仅控制台记录
       }
     })()
   }, [])
@@ -74,12 +75,12 @@ export default function Transparency() {
         {ongoing.length === 0 ? (
           <div style={{color:'#666', marginTop:6}}>暂无</div>
         ) : (
-          <div style={{marginTop:6, whiteSpace:'pre-line', fontFamily:'monospace'}}>
+          <div style={{marginTop:6, whiteSpace:'pre-line', fontFamily:'monospace', color:'#333'}}>
             {ongoing.map((a,i)=> (<div key={i}>{a}</div>))}
           </div>
         )}
       </div>
-      {error && <div style={{color:'#64748b', marginTop:8}}>提示：{error}</div>}
+      {/* 移除错误显示，避免用户困扰 */}
     </div>
   )
 }

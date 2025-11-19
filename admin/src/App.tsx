@@ -460,7 +460,12 @@ export default function App(){
       alert('已刷新别名')
     } catch (e:any) {
       console.error(e)
-      alert(e?.message || String(e))
+      const msg = e?.message || String(e)
+      if (msg.includes('Failed to fetch')) {
+        alert('连接后端失败，请检查网络或稍后再试 (Failed to fetch)')
+      } else {
+        alert(msg)
+      }
     } finally { setAliasBusy(null) }
   }
 
@@ -1250,7 +1255,7 @@ function SupportAdminPanel(){
         merged.sort((a:any,b:any)=> a.ts - b.ts)
         const uniq: any[] = []
         const seen = new Set<string>()
-        for (const it of merged) { const k = `${it.ts}:${it.address}:${it.message}`; if (!seen.has(k)) { seen.add(k); uniq.push(it) } }
+               for (const it of merged) { const k = `${it.ts}:${it.address}:${it.message}`; if (!seen.has(k)) { seen.add(k); uniq.push(it) } }
         setItems(uniq)
         lastRef.current = Math.max(lastRef.current, ...uniq.map((x:any)=>x.ts))
       }

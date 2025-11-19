@@ -14,8 +14,12 @@ module.exports = {
       env: {
         PORT: 4000,
         BASE_URL: 'https://api.luckypood.com', // 部署后端对外完整 HTTPS 域名
-        UPLOAD_DIR: 'uploads',
-        METADATA_DIR: 'metadata'
+        // 强制模块解析优先使用当前 backend 下的依赖，避免回落到上级 /opt/luckypood/node_modules
+        NODE_PATH: __dirname + '/node_modules',
+        // 将运行期数据目录迁移到仓库目录之外，避免 Git 工作区产生改动
+        UPLOAD_DIR: '/opt/luckypood/data/uploads',
+        METADATA_DIR: '/opt/luckypood/data/metadata',
+        LOG_DIR: '/opt/luckypood/data/logs'
         // 如需开启 API_KEY 保护：API_KEY: 'your-strong-api-key'
       }
     }
