@@ -39,7 +39,9 @@ export class MainScene extends Phaser.Scene {
     this.createDecorations(mapSize);
 
     // Setup Socket
-    this.socket = io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000');
+    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    // If URL is provided, use it. Otherwise default to current origin (empty string for io())
+    this.socket = backendUrl ? io(backendUrl) : io();
 
     this.socket.on('connect', () => {
       console.log('Connected to Game Server');

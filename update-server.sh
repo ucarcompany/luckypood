@@ -15,25 +15,37 @@ cd /opt/luckypood || exit 1
 echo "📥 拉取最新代码..."
 git pull origin main
 
+# 设置 npm 镜像 (加速国内下载)
+npm config set registry https://registry.npmmirror.com
+
 # 安装根目录依赖 (Workspaces)
 echo ""
 echo "📦 安装根目录依赖..."
-npm install
+npm install --legacy-peer-deps
 
-# 安装后端依赖 (确保万无一失)
+# 安装后端依赖
 echo ""
 echo "📦 安装后端依赖..."
 cd backend
-npm install
-
+npm install --legacy-peer-deps
 # 构建后端
-echo ""
 echo "🔨 构建后端..."
 npm run build
+cd ..
+
+# 安装前端依赖并构建
+echo ""
+echo "📦 安装前端依赖..."
+cd frontend
+npm install --legacy-peer-deps
+echo "🔨 构建前端..."
+npm run build
+cd ..
 
 # 重启服务
 echo ""
 echo "🔄 重启后端服务..."
+cd backend
 pm2 restart ecosystem.config.js --update-env
 
 # 显示状态
