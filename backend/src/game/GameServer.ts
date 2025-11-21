@@ -107,6 +107,8 @@ export class GameServer {
   private setupSocket() {
     this.io.on('connection', (socket: Socket) => {
       console.log('Player connected:', socket.id);
+      // Send welcome message
+      socket.emit('message', 'Welcome to Lucky World!');
 
       socket.on('join', (wallet: string) => {
         // Initialize player
