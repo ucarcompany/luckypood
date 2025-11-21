@@ -11,6 +11,7 @@ import http from 'http';
 import https from 'https';
 import { utils as ethersUtils, providers as ethersProviders } from 'ethers';
 import { createPoolCreatedAggregator } from './logsPoolCreated';
+import { GameServer } from './game/GameServer';
 // Use ethers v5 imports
 // 注意：已撤回链上聚合 /api/pools 端点，移除 ethers 相关依赖（若未来需要再恢复）。
 
@@ -1087,8 +1088,12 @@ app.get('/api/stats', async (_req, res) => {
 })
 
 // Start HTTP server (bind on IPv4 to ensure 127.0.0.1 works behind Nginx)
-app.listen(PORT, '0.0.0.0', () => {
+const httpServer = http.createServer(app);
+const gameServer = new GameServer(httpServer, METADATA_DIR);
+
+httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Lucky-pool backend listening on ${BASE_URL}`);
+  console.log(`Game Server initialized`);
 });
 
 // Optionally start HTTPS server when certs are provided

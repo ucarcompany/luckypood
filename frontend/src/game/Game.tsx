@@ -62,7 +62,16 @@ const Game: React.FC<GameProps> = ({ walletAddress }) => {
       const newGame = new Phaser.Game(config);
       setGame(newGame);
 
+      const handleResize = () => {
+        if (newGame) {
+          newGame.scale.resize(window.innerWidth, window.innerHeight);
+        }
+      };
+
+      window.addEventListener('resize', handleResize);
+
       return () => {
+        window.removeEventListener('resize', handleResize);
         newGame.destroy(true);
       };
     }

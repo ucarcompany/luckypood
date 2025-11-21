@@ -23,9 +23,22 @@ export class MainScene extends Phaser.Scene {
   }
 
   create() {
+    // Set background color to match the grass (prevents black void on large screens)
+    this.cameras.main.setBackgroundColor('#2e8b57');
+    
     // Create Map (Green background)
-    this.add.rectangle(1000, 1000, 2000, 2000, 0x2e8b57);
-    this.cameras.main.setBounds(0, 0, 2000, 2000);
+    // Map size increased to 3200x3200
+    this.add.rectangle(1600, 1600, 3200, 3200, 0x2e8b57);
+    this.cameras.main.setBounds(0, 0, 3200, 3200);
+    this.physics.world.setBounds(0, 0, 3200, 3200);
+
+    // Add some random decorations (Trees/Rocks)
+    for (let i = 0; i < 50; i++) {
+        const x = Phaser.Math.Between(0, 3200);
+        const y = Phaser.Math.Between(0, 3200);
+        // Simple tree: Darker green circle
+        this.add.circle(x, y, Phaser.Math.Between(20, 40), 0x1e5c39).setDepth(0);
+    }
 
     // Setup Socket
     this.socket = io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000');
