@@ -15,7 +15,12 @@ cd /opt/luckypood || exit 1
 echo "📥 拉取最新代码..."
 git pull origin main
 
-# 安装后端依赖
+# 安装根目录依赖 (Workspaces)
+echo ""
+echo "📦 安装根目录依赖..."
+npm install
+
+# 安装后端依赖 (确保万无一失)
 echo ""
 echo "📦 安装后端依赖..."
 cd backend

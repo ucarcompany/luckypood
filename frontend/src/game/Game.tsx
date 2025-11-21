@@ -37,30 +37,32 @@ const ControlsOverlay = styled.div`
 const JoystickArea = styled.div`
   width: 120px;
   height: 120px;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 50%;
   position: relative;
   pointer-events: auto;
   backdrop-filter: blur(4px);
-  border: 2px solid rgba(255,255,255,0.4);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
 `;
 
 const JoystickKnob = styled.div<{ x: number, y: number }>`
   width: 50px;
   height: 50px;
-  background: rgba(255, 255, 255, 0.8);
+  background: linear-gradient(135deg, #ffffff 0%, #e0e0e0 100%);
   border-radius: 50%;
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%) translate(${props => props.x}px, ${props => props.y}px);
-  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  transform: translate(-50%, -50%) translate(${(props) => props.x}px, ${(props) => props.y}px);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3), inset 0 2px 5px rgba(255,255,255,1);
+  border: 1px solid #ccc;
 `;
 
 const ActionButton = styled.button`
   width: 80px;
   height: 80px;
-  background: #ff4757;
+  background: linear-gradient(135deg, #ff4757 0%, #c0392b 100%);
   border: 4px solid #fff;
   border-radius: 50%;
   color: white;
@@ -70,10 +72,13 @@ const ActionButton = styled.button`
   display: flex;
   justify-content: center;
   align-items: center;
-  box-shadow: 0 4px 0 #c0392b;
+  box-shadow: 0 6px 0 #96281b, 0 10px 10px rgba(0,0,0,0.2);
+  transition: all 0.1s;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.3);
+  
   &:active {
-    transform: translateY(4px);
-    box-shadow: 0 0 0 #c0392b;
+    transform: translateY(6px);
+    box-shadow: 0 0 0 #96281b, inset 0 2px 5px rgba(0,0,0,0.2);
   }
 `;
 
