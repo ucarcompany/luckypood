@@ -5,7 +5,7 @@ export const DEFAULT_RPC = (import.meta.env.VITE_DEFAULT_RPC || 'https://data-se
 // 后端地址：生产环境回落到正式域名，开发环境回落到本机
 export const BACKEND_URL = (
 	(import.meta.env.VITE_BACKEND_URL
-		|| (import.meta.env.PROD ? 'https://api.luckypood.com' : 'http://localhost:4000')) as string
+		|| (import.meta.env.PROD ? '' : 'http://localhost:4000')) as string
 ).trim()
 export const BACKEND_API_KEY = (import.meta.env.VITE_BACKEND_API_KEY || '').trim()
 export const VRF_SUB_ID = (import.meta.env.VITE_VRF_SUB_ID || '').trim()
