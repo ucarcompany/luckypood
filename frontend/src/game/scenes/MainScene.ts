@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { io, Socket } from 'socket.io-client';
+import { BACKEND_URL } from '../../config';
 
 export class MainScene extends Phaser.Scene {
   private socket!: Socket;
@@ -39,9 +40,11 @@ export class MainScene extends Phaser.Scene {
     this.createDecorations(mapSize);
 
     // Setup Socket
-    const backendUrl = import.meta.env.VITE_BACKEND_URL;
-    // If URL is provided, use it. Otherwise default to current origin (empty string for io())
-    this.socket = backendUrl ? io(backendUrl) : io();
+    // Use BACKEND_URL from config which handles env vars and defaults correctly
+    console.log('Connecting to Game Server at:', BACKEND_URL || 'Current Origin');
+    this.socket = io(BACKEND_URL || undefined, {
+      transports: ['websocket', 'polling']
+    });
 
     this.socket.on('connect', () => {
       console.log('Connected to Game Server');

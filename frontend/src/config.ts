@@ -2,7 +2,7 @@
 export const FACTORY_ADDRESS = (import.meta.env.VITE_FACTORY_ADDRESS || '0xCEc46Ff4217feb58937212ca0F71F3Ee6c18FC75').trim()
 // 默认 RPC：未配置时回落到 BSC Testnet 公共节点
 export const DEFAULT_RPC = (import.meta.env.VITE_DEFAULT_RPC || 'https://data-seed-prebsc-1-s1.binance.org:8545/').trim()
-// 后端地址：生产环境回落到正式域名，开发环境回落到本机
+// 后端地址：生产环境回落到相对路径（同源），开发环境回落到本机
 export const BACKEND_URL = (
 	(import.meta.env.VITE_BACKEND_URL
 		|| (import.meta.env.PROD ? '' : 'http://localhost:4000')) as string
