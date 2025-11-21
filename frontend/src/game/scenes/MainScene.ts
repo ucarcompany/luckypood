@@ -41,7 +41,7 @@ export class MainScene extends Phaser.Scene {
 
     // Setup Socket
     // Use BACKEND_URL from config which handles env vars and defaults correctly
-    console.log('Connecting to Game Server at:', BACKEND_URL || 'Current Origin');
+    console.log('MainScene v2.0 - Connecting to Game Server at:', BACKEND_URL || 'Current Origin (Relative)');
     this.socket = io(BACKEND_URL || undefined, {
       transports: ['websocket', 'polling']
     });
