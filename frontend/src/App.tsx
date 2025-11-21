@@ -3,6 +3,7 @@ import { BrowserProvider } from 'ethers'
 import './styles.css'
 import ActivityList from './components/ActivityList'
 import Transparency from './pages/Transparency'
+import Game from './game/Game'
 import DebugPanel from './components/DebugPanel'
 import { useWeb3 } from './web3'
 import { useTranslation } from 'react-i18next'
@@ -18,7 +19,7 @@ const bscTestnet = {
 export default function App() {
   const { t } = useTranslation()
   const { provider, account, chainIdHex, connect } = useWeb3()
-  const [tab, setTab] = useState<'list'|'transparency'>('list')
+  const [tab, setTab] = useState<'game'|'list'|'transparency'>('game')
   const [lang, setLang] = useState(i18n.language)
 
   const onLangChange = (v: string) => {
@@ -52,6 +53,19 @@ export default function App() {
     }
   }
 
+  if (tab === 'game') {
+    return (
+      <div>
+        {/* Overlay Header for Game Mode */}
+        <div style={{position: 'absolute', top: 10, right: 10, zIndex: 100, display: 'flex', gap: 10}}>
+           <button onClick={()=>setTab('list')} style={{background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid white'}}>Classic View</button>
+           {!account && <button className="btn-primary" onClick={connect}>{t('connect')}</button>}
+        </div>
+        <Game walletAddress={account || ''} />
+      </div>
+    )
+  }
+
   return (
     <div className="container">
       <div className="koi-bg">
@@ -64,6 +78,7 @@ export default function App() {
           <span className="subtitle">{t('subtitle_tagline')}</span>
         </div>
         <div className="header-actions" style={{display:'flex', alignItems:'center', gap:8}}>
+          <button onClick={()=>setTab('game')} className="btn-primary" style={{background: '#2e8b57'}}>Enter World</button>
           <select value={lang} onChange={(e)=>onLangChange(e.target.value)} style={{padding:'6px 8px', borderRadius:8}}>
             <option value="zh">简体中文</option>
             <option value="en">English</option>
