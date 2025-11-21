@@ -15,3 +15,9 @@ pnpm-debug.log*
 # editor
 .vscode/
 .DS_Store
+
+# build artifacts
+dist/
+backend/dist/
+frontend/dist/
+admin/dist/
