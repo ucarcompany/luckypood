@@ -15,6 +15,8 @@ const fs_1 = __importDefault(require("fs"));
 const http_1 = __importDefault(require("http"));
 const https_1 = __importDefault(require("https"));
 const ethers_1 = require("ethers");
+const logsPoolCreated_1 = require("./logsPoolCreated");
+const GameServer_1 = require("./game/GameServer");
 // Use ethers v5 imports
 // 注意：已撤回链上聚合 /api/pools 端点，移除 ethers 相关依赖（若未来需要再恢复）。
 // Basic configuration via env vars
@@ -29,42 +31,79 @@ const SSL_PFX_PASSPHRASE = process.env.SSL_PFX_PASSPHRASE || '';
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path_1.default.join(process.cwd(), 'uploads');
 const METADATA_DIR = process.env.METADATA_DIR || path_1.default.join(process.cwd(), 'metadata');
 const LOG_DIR = process.env.LOG_DIR || path_1.default.join(process.cwd(), 'logs');
+const FACTORY_ADDRESS = (process.env.FACTORY_ADDRESS || '').trim();
+const FACTORY_DEPLOY_BLOCK = Number(process.env.FACTORY_DEPLOY_BLOCK || '0') || 0;
+const RPC_URL = process.env.RPC_URL || 'https://data-seed-prebsc-1-s1.binance.org:8545/';
 // Ensure directories exist
 for (const dir of [UPLOAD_DIR, METADATA_DIR, LOG_DIR]) {
     if (!fs_1.default.existsSync(dir))
         fs_1.default.mkdirSync(dir, { recursive: true });
 }
+// ---- Factory PoolCreated 日志缓存聚合（减少前端大范围 getLogs 速率限制） ----
+let poolCreatedAgg = null;
+if (FACTORY_ADDRESS) {
+    try {
+        poolCreatedAgg = (0, logsPoolCreated_1.createPoolCreatedAggregator)({
+            factory: FACTORY_ADDRESS,
+            deployBlock: FACTORY_DEPLOY_BLOCK,
+            rpcUrl: RPC_URL,
+            cacheDir: METADATA_DIR,
+            intervalMs: 90000
+        });
+        console.log('[logs-cache] PoolCreated aggregator started from block', FACTORY_DEPLOY_BLOCK);
+    }
+    catch (e) {
+        console.error('[logs-cache] init failed', e?.message || e);
+    }
+}
 // Multer storage
 const storage = multer_1.default.diskStorage({
     destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
     filename: (_req, file, cb) => {
-        const ext = path_1.default.extname(file.originalname);
-        const base = path_1.default.basename(file.originalname, ext).replace(/[^a-zA-Z0-9-_]/g, '_');
+        const ext = path_1.default.extname(file.originalname || '').slice(0, 10);
+        const safeBase = path_1.default.basename(file.originalname || 'file', ext).replace(/[^a-zA-Z0-9-_]/g, '_') || 'file';
         const stamp = Date.now();
-        cb(null, `${base}_${stamp}${ext}`);
+        cb(null, `${safeBase}_${stamp}${ext || ''}`);
     }
 });
+// 放宽上传策略：接受常见图片与未识别类型（部分代理会丢失 mime），并提升大小上限到 10MB。
 const upload = (0, multer_1.default)({
     storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
-        if (file?.mimetype && String(file.mimetype).startsWith('image/'))
-            return cb(null, true);
-        return cb(new Error('invalid_file_type'));
+        try {
+            const mime = String(file?.mimetype || '').toLowerCase();
+            if (!mime || mime === 'application/octet-stream')
+                return cb(null, true); // 代理丢失 mime 时放行
+            if (mime.startsWith('image/'))
+                return cb(null, true);
+            // 允许 json / text 以支持测试与元数据直接上传
+            if (mime.includes('json') || mime.startsWith('text/'))
+                return cb(null, true);
+            console.warn('[upload] reject type', mime, file?.originalname);
+            return cb(new Error('invalid_file_type'));
+        }
+        catch (e) {
+            return cb(new Error('invalid_file_type'));
+        }
     }
 });
 // Express app
 const app = (0, express_1.default)();
 app.disable('x-powered-by');
-// 部署在 Nginx 反向代理之后，启用 trust proxy，避免 express-rate-limit 关于 X-Forwarded-For 的告警
-app.set('trust proxy', true);
+// 部署在 Nginx 反向代理之后，仅信任最前置的 1 层代理
+// 注意：express-rate-limit v7 不允许使用宽松的 true（会抛 ERR_ERL_PERMISSIVE_TRUST_PROXY）
+app.set('trust proxy', 1);
 // Helmet with relaxed CORP/COEP so that images/JSON can be embedded across LAN origins
 app.use((0, helmet_1.default)({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
     crossOriginEmbedderPolicy: false
 }));
 app.use((0, cors_1.default)({ origin: true, credentials: true }));
+app.options('*', (0, cors_1.default)()); // Enable pre-flight for all routes
 app.use(express_1.default.json({ limit: '1mb' }));
+// 兼容表单式提交 JSON（某些客户端可能用 x-www-form-urlencoded）
+app.use(express_1.default.urlencoded({ extended: true, limit: '1mb' }));
 app.use((0, morgan_1.default)('combined'));
 // Basic rate limiting（仅作用于 /api 路径，避免静态元数据与图片频繁读取触发 429）
 const limiter = (0, express_rate_limit_1.default)({ windowMs: 60000, max: 120, standardHeaders: true, legacyHeaders: false });
@@ -85,6 +124,22 @@ app.use('/meta', express_1.default.static(METADATA_DIR, {
 }));
 // Health check
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
+// Factory PoolCreated logs cache endpoints (reduce front-end chain scanning)
+app.get('/api/factory/pool-created', (req, res) => {
+    if (!poolCreatedAgg)
+        return res.status(503).json({ error: 'aggregator_unavailable' });
+    const events = poolCreatedAgg.getEvents();
+    res.json({ ok: true, count: events.length, lastScannedBlock: poolCreatedAgg.getLastScannedBlock(), events });
+});
+app.post('/api/factory/pool-created/scan', (req, res) => {
+    if (!poolCreatedAgg)
+        return res.status(503).json({ error: 'aggregator_unavailable' });
+    poolCreatedAgg.forceScan().then(() => {
+        res.json({ ok: true, lastScannedBlock: poolCreatedAgg.getLastScannedBlock(), count: poolCreatedAgg.getEvents().length });
+    }).catch(e => {
+        res.status(500).json({ error: 'scan_failed', message: e?.message || String(e) });
+    });
+});
 // Friendly landing page for root path
 app.get('/', (_req, res) => {
     const html = `<!doctype html>
@@ -120,12 +175,20 @@ function requireApiKey(req, res, next) {
     return res.status(401).json({ error: 'unauthorized' });
 }
 // Upload endpoint
-app.post('/api/upload', requireApiKey, upload.single('file'), (req, res) => {
+app.post('/api/upload', requireApiKey, (req, res, next) => {
+    // 为了兼容某些代理对 multipart 的处理，提前设置 no-store
+    try {
+        res.setHeader('Cache-Control', 'no-store');
+    }
+    catch { }
+    next();
+}, upload.single('file'), (req, res) => {
     const mreq = req;
     if (!mreq.file)
         return res.status(400).json({ error: 'no_file' });
     const url = `${BASE_URL}/uploads/${encodeURIComponent(mreq.file.filename)}`;
-    return res.json({ url, filename: mreq.file.filename, size: mreq.file.size, mime: mreq.file.mimetype });
+    console.log('[upload] stored', mreq.file.originalname, '->', mreq.file.filename, mreq.file.mimetype, mreq.file.size);
+    return res.json({ url, filename: mreq.file.filename, size: mreq.file.size, mime: mreq.file.mimetype || '' });
 });
 // Metadata endpoint
 app.post('/api/metadata', requireApiKey, async (req, res) => {
@@ -389,7 +452,7 @@ app.post('/api/meta/alias', requireApiKey, async (req, res) => {
             return res.status(400).json({ error: 'missing_uri' });
         let json = null;
         try {
-            const r = await fetch(target);
+            const r = await fetchWithTimeout(String(target), 3000);
             if (!r.ok)
                 return res.status(400).json({ error: 'fetch_failed', status: r.status });
             json = await r.json().catch(() => null);
@@ -414,6 +477,124 @@ app.post('/api/meta/alias', requireApiKey, async (req, res) => {
         return res.status(500).json({ error: 'internal_error' });
     }
 });
+// 批量为 index.json 中所有池生成/刷新别名文件，并将映射指向稳定别名
+// POST /api/meta/alias-all  { force?: 1 }  force=1 时即使已存在别名文件也重新写入
+app.post('/api/meta/alias-all', requireApiKey, async (req, res) => {
+    try {
+        const force = String((req.body || {}).force || '0') === '1';
+        const base = new URL(BASE_URL);
+        const idx = await readIndex();
+        const updated = [];
+        for (const [pool, uri] of Object.entries(idx)) {
+            const lower = pool.toLowerCase();
+            if (!uri)
+                continue;
+            const aliasPath = path_1.default.join(METADATA_DIR, `${lower}.json`);
+            let need = force || !fs_1.default.existsSync(aliasPath);
+            let json = null;
+            if (need) {
+                try {
+                    const r = await fetch(uri);
+                    if (r.ok)
+                        json = await r.json().catch(() => null);
+                }
+                catch { }
+                if (json && typeof json === 'object') {
+                    await fs_1.default.promises.writeFile(aliasPath, JSON.stringify(json, null, 2), 'utf-8');
+                    const aliasUri = `${base.origin}/meta/${lower}.json`;
+                    idx[lower] = aliasUri;
+                    updated.push({ pool: lower, alias: aliasUri, refreshed: true });
+                }
+            }
+            else {
+                const aliasUri = `${base.origin}/meta/${lower}.json`;
+                idx[lower] = aliasUri;
+                updated.push({ pool: lower, alias: aliasUri, refreshed: false });
+            }
+        }
+        await writeIndex(idx);
+        return res.json({ ok: true, count: updated.length, items: updated, force });
+    }
+    catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: 'internal_error' });
+    }
+});
+// ---- Recover single pool mapping from chain logs and create alias ----
+// POST /api/meta/recover-one { pool, factory?, rpcUrl?, fromBlock? }
+// Defaults: factory=0xCEc46Ff4217feb58937212ca0F71F3Ee6c18FC75 (BSC Testnet), fromBlock=71704665, rpcUrl=prebsc seed
+app.post('/api/meta/recover-one', requireApiKey, async (req, res) => {
+    try {
+        const body = req.body || {};
+        const poolRaw = String(body.pool || '').toLowerCase();
+        if (!/^0x[0-9a-f]{40}$/.test(poolRaw))
+            return res.status(400).json({ error: 'invalid_pool' });
+        const factory = String(body.factory || '0xCEc46Ff4217feb58937212ca0F71F3Ee6c18FC75');
+        const fromBlock = Number(body.fromBlock || 71704665);
+        const rpcUrl = String(body.rpcUrl || 'https://data-seed-prebsc-1-s1.binance.org:8545/');
+        const provider = new ethers_1.providers.JsonRpcProvider(rpcUrl);
+        const iface = new ethers_1.utils.Interface([
+            'event PoolCreated(address indexed pool, uint256 min, uint256 max, string metadataURI, uint256 sortOrder)'
+        ]);
+        const topic0 = iface.getEventTopic('PoolCreated');
+        const topic1 = ethers_1.utils.hexZeroPad(poolRaw, 32);
+        const latest = await provider.getBlockNumber();
+        const step = 5000;
+        let foundUri = null;
+        for (let start = fromBlock; start <= latest; start += step) {
+            const end = Math.min(start + step - 1, latest);
+            const logs = await provider.getLogs({
+                address: factory,
+                fromBlock: start,
+                toBlock: end,
+                topics: [topic0, topic1]
+            }).catch(() => []);
+            for (const lg of logs) {
+                try {
+                    const parsed = iface.parseLog(lg);
+                    const uri = String(parsed?.args?.metadataURI || '');
+                    if (uri) {
+                        foundUri = uri;
+                        break;
+                    }
+                }
+                catch { /* ignore */ }
+            }
+            if (foundUri)
+                break;
+        }
+        if (!foundUri)
+            return res.status(404).json({ error: 'metadata_uri_not_found' });
+        // upsert index
+        const lower = poolRaw;
+        const idx = await readIndex();
+        idx[lower] = foundUri;
+        await writeIndex(idx);
+        // create alias file and repoint index to alias (same as alias endpoint)
+        let json = null;
+        try {
+            const r = await fetchWithTimeout(foundUri, 3000);
+            if (r.ok)
+                json = await r.json().catch(() => null);
+        }
+        catch { }
+        if (json && typeof json === 'object') {
+            const base = new URL(BASE_URL);
+            const aliasPath = path_1.default.join(METADATA_DIR, `${lower}.json`);
+            await fs_1.default.promises.writeFile(aliasPath, JSON.stringify(json, null, 2), 'utf-8');
+            const aliasUri = `${base.origin}/meta/${lower}.json`;
+            const idx2 = await readIndex();
+            idx2[lower] = aliasUri;
+            await writeIndex(idx2);
+            return res.json({ ok: true, pool: lower, uri: foundUri, alias: aliasUri, recovered: true });
+        }
+        return res.json({ ok: true, pool: lower, uri: foundUri, recovered: true, alias: null });
+    }
+    catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: 'internal_error' });
+    }
+});
 async function tryReadJsonFile(p) {
     try {
         const txt = await fs_1.default.promises.readFile(p, 'utf-8');
@@ -424,6 +605,18 @@ async function tryReadJsonFile(p) {
     }
     catch {
         return null;
+    }
+}
+// Helper: fetch with timeout to avoid hanging on unreachable hosts
+async function fetchWithTimeout(url, timeoutMs = 3000) {
+    const ctrl = new AbortController();
+    const id = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+        // @ts-ignore Node 18+ has global fetch and AbortController
+        return await fetch(url, { signal: ctrl.signal });
+    }
+    finally {
+        clearTimeout(id);
     }
 }
 async function writeScanLog(lines) {
@@ -466,7 +659,7 @@ async function scanAndMaybeRepairIndex(opts) {
             continue;
         }
         try {
-            const r = await fetch(String(uri));
+            const r = await fetchWithTimeout(String(uri), 3000);
             if (!r.ok) {
                 issues.push({ pool: lower, uri: String(uri), reason: 'fetch_failed', status: r.status });
                 broken++;
@@ -537,7 +730,10 @@ const scanMetaHandler = async (req, res) => {
         return res.status(500).json({ error: 'internal_error' });
     }
 };
-app.get('/api/meta/scan', scanMetaHandler)(async () => {
+app.get('/api/meta/scan', scanMetaHandler);
+// 启动时与每小时定期扫描一次（自动修复）
+;
+(async () => {
     try {
         const first = await scanAndMaybeRepairIndex({ repair: true });
         if (first.broken > 0)
@@ -576,7 +772,7 @@ app.post('/api/meta/clone', requireApiKey, async (req, res) => {
             const uri = idx[src];
             if (!uri)
                 return res.status(400).json({ error: 'missing_src_uri' });
-            const r = await fetch(uri).catch(() => null);
+            const r = await fetchWithTimeout(String(uri), 3000).catch(() => null);
             if (!r || !r.ok)
                 return res.status(400).json({ error: 'fetch_failed' });
             json = await r.json().catch(() => null);
@@ -588,6 +784,9 @@ app.post('/api/meta/clone', requireApiKey, async (req, res) => {
             for (const k of ['title', 'description', 'image']) {
                 if (typeof replacements[k] === 'string' && replacements[k])
                     json[k] = replacements[k];
+            }
+            if (typeof replacements.startAt === 'number' && replacements.startAt > 0) {
+                json.startAt = Math.floor(Number(replacements.startAt));
             }
         }
         // 写入目标别名
@@ -604,6 +803,22 @@ app.post('/api/meta/clone', requireApiKey, async (req, res) => {
         return res.status(500).json({ error: 'internal_error' });
     }
 });
+// ===== 自动下一期守护（可选） =====
+const autoNext_1 = require("./autoNext");
+try {
+    (0, autoNext_1.registerAutoNext)(app);
+}
+catch (e) {
+    console.warn('auto-next init failed:', e);
+}
+// ===== 历史清理（30天策略） =====
+const cleanup_1 = require("./cleanup");
+try {
+    (0, cleanup_1.registerCleanup)(app);
+}
+catch (e) {
+    console.warn('cleanup init failed:', e);
+}
 // ---- Simple Chat System (short polling, per-pool) ----
 // In-memory auth state (reset on process restart)
 const CHAT_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -766,6 +981,240 @@ app.post('/api/log', requireApiKey, async (req, res) => {
         return res.status(500).json({ error: 'internal_error' });
     }
 });
+// ---- Global Support Chat (by user address, not per pool) ----
+// Separate nonces to avoid message mismatch with pool chat
+const supportNonces = new Map();
+// GET /api/support/nonce?address=0x...
+app.get('/api/support/nonce', async (req, res) => {
+    try {
+        const address = String(req.query.address || '').toLowerCase();
+        if (!/^0x[0-9a-f]{40}$/.test(address))
+            return res.status(400).json({ error: 'invalid_address' });
+        const nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        supportNonces.set(address, { nonce, ts: Date.now() });
+        // 禁止缓存，避免 304 导致前端拿不到新 nonce
+        try {
+            res.setHeader('Cache-Control', 'no-store');
+        }
+        catch { }
+        return res.json({ nonce, expireInSec: 300 });
+    }
+    catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: 'internal_error' });
+    }
+});
+// POST /api/support/auth { address, signature }
+// Message: `Lucky-pool Support Chat Login\nAddress: <address_lower>\nNonce: <nonce>`
+app.post('/api/support/auth', async (req, res) => {
+    try {
+        const { address, signature } = req.body || {};
+        const adr = String(address || '').toLowerCase();
+        if (!/^0x[0-9a-f]{40}$/.test(adr))
+            return res.status(400).json({ error: 'invalid_address' });
+        const found = supportNonces.get(adr);
+        if (!found) {
+            try {
+                await fs_1.default.promises.appendFile(path_1.default.join(LOG_DIR, 'support-auth-debug.jsonl'), JSON.stringify({ stage: 'verify', adr, error: 'nonce_missing', ts: Date.now() }) + '\n', 'utf-8');
+            }
+            catch { }
+            return res.status(400).json({ error: 'nonce_missing' });
+        }
+        if (Date.now() - found.ts > 5 * 60 * 1000) {
+            supportNonces.delete(adr);
+            try {
+                await fs_1.default.promises.appendFile(path_1.default.join(LOG_DIR, 'support-auth-debug.jsonl'), JSON.stringify({ stage: 'verify', adr, error: 'nonce_expired', ts: Date.now() }) + '\n', 'utf-8');
+            }
+            catch { }
+            return res.status(400).json({ error: 'nonce_expired' });
+        }
+        const message = `Lucky-pool Support Chat Login\nAddress: ${adr}\nNonce: ${found.nonce}`;
+        const sig = String(signature || '');
+        const authDebug = { stage: 'verify', adr, sigLen: sig.length, ts: Date.now() };
+        const tryRecover = (msg) => {
+            try {
+                return ethers_1.utils.verifyMessage(msg, sig);
+            }
+            catch {
+                return null;
+            }
+        };
+        const tryRecoverEthSign = (msg) => {
+            try {
+                const digest = ethers_1.utils.keccak256(ethers_1.utils.toUtf8Bytes(msg));
+                return ethers_1.utils.recoverAddress(digest, sig);
+            }
+            catch {
+                return null;
+            }
+        };
+        let recovered = tryRecover(message);
+        if (!recovered) {
+            // 兼容 CRLF 换行
+            const alt = message.replace(/\n/g, '\r\n');
+            recovered = tryRecover(alt);
+            if (!recovered)
+                recovered = tryRecoverEthSign(message) || tryRecoverEthSign(alt);
+        }
+        if (!recovered) {
+            try {
+                await fs_1.default.promises.appendFile(path_1.default.join(LOG_DIR, 'support-auth-debug.jsonl'), JSON.stringify({ ...authDebug, error: 'invalid_signature' }) + '\n', 'utf-8');
+            }
+            catch { }
+            return res.status(400).json({ error: 'invalid_signature' });
+        }
+        if (recovered.toLowerCase() !== adr) {
+            try {
+                await fs_1.default.promises.appendFile(path_1.default.join(LOG_DIR, 'support-auth-debug.jsonl'), JSON.stringify({ ...authDebug, error: 'address_mismatch', recovered }) + '\n', 'utf-8');
+            }
+            catch { }
+            return res.status(400).json({ error: 'address_mismatch' });
+        }
+        supportNonces.delete(adr);
+        const token = randomToken(32);
+        chatSessions.set(adr, { token, ts: Date.now() });
+        try {
+            await fs_1.default.promises.appendFile(path_1.default.join(LOG_DIR, 'support-auth-debug.jsonl'), JSON.stringify({ ...authDebug, ok: true, recovered }) + '\n', 'utf-8');
+        }
+        catch { }
+        return res.json({ ok: true, token, ttlSec: CHAT_TOKEN_TTL_MS / 1000 });
+    }
+    catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: 'internal_error' });
+    }
+});
+function supportLogFile(ts) {
+    const d = new Date(ts);
+    return path_1.default.join(LOG_DIR, `support-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}.jsonl`);
+}
+// POST /api/support/message { address, token, message }
+app.post('/api/support/message', async (req, res) => {
+    try {
+        const { address, token } = req.body || {};
+        let { message } = req.body || {};
+        const adr = String(address || '').toLowerCase();
+        if (!/^0x[0-9a-f]{40}$/.test(adr))
+            return res.status(400).json({ error: 'invalid_address' });
+        message = sanitizeMessage(String(message || ''));
+        if (!message)
+            return res.status(400).json({ error: 'empty_message' });
+        const session = chatSessions.get(adr);
+        if (!session || session.token !== String(token || ''))
+            return res.status(401).json({ error: 'unauthorized' });
+        if (Date.now() - session.ts > CHAT_TOKEN_TTL_MS) {
+            chatSessions.delete(adr);
+            return res.status(401).json({ error: 'session_expired' });
+        }
+        const last = chatLastSent.get(adr) || 0;
+        if (Date.now() - last < CHAT_MIN_INTERVAL_MS)
+            return res.status(429).json({ error: 'too_many_requests' });
+        chatLastSent.set(adr, Date.now());
+        const ts = Math.floor(Date.now() / 1000);
+        const file = supportLogFile(ts * 1000);
+        const line = JSON.stringify({ ts, channel: 'support', from: 'user', address: adr, message });
+        await fs_1.default.promises.appendFile(file, line + '\n', 'utf-8');
+        return res.json({ ok: true, ts });
+    }
+    catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: 'internal_error' });
+    }
+});
+// Admin send to a specific user
+// POST /api/support/admin-message { to, message }
+app.post('/api/support/admin-message', requireApiKey, async (req, res) => {
+    try {
+        const { to } = req.body || {};
+        let { message } = req.body || {};
+        const adr = String(to || '').toLowerCase();
+        if (!/^0x[0-9a-f]{40}$/.test(adr))
+            return res.status(400).json({ error: 'invalid_address' });
+        message = sanitizeMessage(String(message || ''));
+        if (!message)
+            return res.status(400).json({ error: 'empty_message' });
+        const ts = Math.floor(Date.now() / 1000);
+        const file = supportLogFile(ts * 1000);
+        const line = JSON.stringify({ ts, channel: 'support', from: 'admin', address: adr, message });
+        await fs_1.default.promises.appendFile(file, line + '\n', 'utf-8');
+        return res.json({ ok: true, ts });
+    }
+    catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: 'internal_error' });
+    }
+});
+// GET /api/support/messages?address=0x..&since=unix_ts&limit=200
+// If address provided -> return conversation for that user; if omitted and API key present -> return all recent
+app.get('/api/support/messages', async (req, res) => {
+    try {
+        const adrRaw = String(req.query.address || '').toLowerCase();
+        const since = Number(req.query.since || 0) || 0;
+        const limit = Math.min(Math.max(Number(req.query.limit || 200), 1), 1000);
+        const now = new Date();
+        const months = [0, -1].map(delta => {
+            const d = new Date(now.getFullYear(), now.getMonth() + delta, 1);
+            return path_1.default.join(LOG_DIR, `support-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}.jsonl`);
+        });
+        const lines = [];
+        for (const f of months) {
+            if (fs_1.default.existsSync(f)) {
+                const content = await fs_1.default.promises.readFile(f, 'utf-8');
+                lines.push(...content.split(/\r?\n/).filter(Boolean));
+            }
+        }
+        let items = lines.map(l => { try {
+            return JSON.parse(l);
+        }
+        catch {
+            return null;
+        } }).filter(Boolean);
+        if (adrRaw && /^0x[0-9a-f]{40}$/.test(adrRaw)) {
+            items = items.filter((it) => it.address === adrRaw);
+        }
+        items = items.filter((it) => !since || (Number(it.ts) || 0) > since).slice(-limit);
+        return res.json({ items });
+    }
+    catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: 'internal_error' });
+    }
+});
+// GET /api/support/conversations  -> aggregate by address with lastTs (admin only)
+app.get('/api/support/conversations', requireApiKey, async (_req, res) => {
+    try {
+        const now = new Date();
+        const months = [0, -1].map(delta => {
+            const d = new Date(now.getFullYear(), now.getMonth() + delta, 1);
+            return path_1.default.join(LOG_DIR, `support-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}.jsonl`);
+        });
+        const lines = [];
+        for (const f of months) {
+            if (fs_1.default.existsSync(f)) {
+                const content = await fs_1.default.promises.readFile(f, 'utf-8');
+                lines.push(...content.split(/\r?\n/).filter(Boolean));
+            }
+        }
+        const map = new Map();
+        for (const l of lines) {
+            try {
+                const j = JSON.parse(l);
+                if (j?.address) {
+                    const t = Number(j.ts) || 0;
+                    if (t)
+                        map.set(j.address, Math.max(map.get(j.address) || 0, t));
+                }
+            }
+            catch { }
+        }
+        const items = Array.from(map.entries()).map(([address, lastTs]) => ({ address, lastTs })).sort((a, b) => a.lastTs - b.lastTs).slice(-200).reverse();
+        return res.json({ items });
+    }
+    catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: 'internal_error' });
+    }
+});
 // /api/pools 端点已删除：若前端仍调用将收到 404。
 // Tail recent logs
 app.get('/api/logs', requireApiKey, async (req, res) => {
@@ -837,10 +1286,12 @@ app.get('/api/stats', async (_req, res) => {
         return res.status(500).json({ error: 'internal_error' });
     }
 });
-// Start HTTP server
+// Start HTTP server (bind on IPv4 to ensure 127.0.0.1 works behind Nginx)
 const httpServer = http_1.default.createServer(app);
-httpServer.listen(PORT, () => {
+const gameServer = new GameServer_1.GameServer(httpServer, METADATA_DIR);
+httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Lucky-pool backend listening on ${BASE_URL}`);
+    console.log(`Game Server initialized`);
 });
 // Optionally start HTTPS server when certs are provided
 if (HTTPS_PORT) {
