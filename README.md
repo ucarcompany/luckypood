@@ -231,3 +231,72 @@ npm.cmd run -w admin dev -- --port=5174
 - 后端添加 Redis/数据库持久化与离线分析。
 
 更详细的使用与参数说明请见各子目录内的 README 与代码注释。
+
+## 11. 生产部署（多域配置）
+目标域名：
+- 用户前端：`https://luckypood.com`
+- 管理前端：`https://admin.luckypood.com`
+- 后端 API & Socket.io：`https://api.luckypood.com`
+
+### 后端环境变量 (服务器本地 `backend/.env`，不要提交)
+```
+PORT=4000
+BASE_URL=https://api.luckypood.com
+API_KEY=<可选>
+FACTORY_ADDRESS=0xCEc46Ff4217feb58937212ca0F71F3Ee6c18FC75
+FACTORY_DEPLOY_BLOCK=71704665
+```
+`frontend/.env.production` 与 `admin/.env.production` 设置：
+```
+VITE_FACTORY_ADDRESS=0xCEc46Ff4217feb58937212ca0F71F3Ee6c18FC75
+VITE_BACKEND_URL=https://api.luckypood.com
+VITE_FACTORY_DEPLOY_BLOCK=71704665
+```
+
+### Nginx 示例
+三个独立 server 块（假设已获取证书，可把 `listen 80` 换成 `listen 443 ssl` 并加证书）：
+```
+server { # 用户前端
+	listen 80; server_name luckypood.com;
+	root /var/www/luckypood-user; index index.html;
+	location / { try_files $uri $uri/ /index.html; }
+}
+server { # 管理前端
+	listen 80; server_name admin.luckypood.com;
+	root /var/www/luckypood-admin; index index.html;
+	location / { try_files $uri $uri/ /index.html; }
+}
+server { # 后端 + Socket.io
+	listen 80; server_name api.luckypood.com;
+	location / { proxy_pass http://127.0.0.1:4000/; }
+	location /socket.io/ {
+		proxy_pass http://127.0.0.1:4000/socket.io/;
+		proxy_http_version 1.1;
+		proxy_set_header Upgrade $http_upgrade;
+		proxy_set_header Connection "upgrade";
+		proxy_set_header Host $host;
+	}
+	location /uploads/ { proxy_pass http://127.0.0.1:4000/uploads/; }
+	location /meta/ { proxy_pass http://127.0.0.1:4000/meta/; }
+	location /api/ { proxy_pass http://127.0.0.1:4000/api/; }
+}
+```
+启用：
+```
+sudo ln -s /etc/nginx/sites-available/luckypood /etc/nginx/sites-enabled/luckypood
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### 自动部署脚本
+已新增 `deploy-multi-domain.sh`：服务器上运行：
+```
+chmod +x deploy-multi-domain.sh
+./deploy-multi-domain.sh
+```
+脚本步骤：拉取代码 → 构建后端/前端/管理端 → 同步 dist → 启动或重启 pm2 → 重载 Nginx。
+
+### 常见问题
+- 找不到 `dist/index.js`：在错误目录执行 pm2；请使用绝对路径 `/opt/luckypood/backend/dist/index.js`。
+- 前端 404：确保 `root` 指向具体 `dist` 目录且有 `index.html`。
+- Socket.io 无法连接：确认反代块包含 `Upgrade`/`Connection upgrade` 头。
+
