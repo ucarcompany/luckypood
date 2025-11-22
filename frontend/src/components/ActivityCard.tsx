@@ -261,7 +261,7 @@ export default function ActivityCard({ info, onRefresh, onParticipateSuccess }: 
             </div>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16, flexWrap:'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
               <span style={{ whiteSpace: 'nowrap', color: '#333' }}>{t('count')}:</span>
               <Input 
@@ -276,8 +276,14 @@ export default function ActivityCard({ info, onRefresh, onParticipateSuccess }: 
             <GlassButton 
               variant="primary" 
               onClick={handleParticipate} 
-              disabled={remaining <= 0 || txBusy}
-              title={remaining <= 0 ? t('exceed_limit') : txBusy ? t('status_participating') : ''}
+              disabled={remaining <= 0 || txBusy || notStarted || info.drawn || countdownActive && remaining<=0}
+              title={
+                !account ? t('please_connect') :
+                notStarted ? t('not_started') :
+                info.drawn ? t('drawn') :
+                remaining <= 0 ? t('exceed_limit') :
+                txBusy ? t('status_participating') : ''
+              }
             >
               {txBusy ? t('status_participating') : t('participate')}
             </GlassButton>
@@ -285,18 +291,27 @@ export default function ActivityCard({ info, onRefresh, onParticipateSuccess }: 
               variant="danger" 
               onClick={handleRefund} 
               disabled={!canRefund || txBusy}
-              title={!canRefund ? (!info.minReached ? t('fundraising') : t('drawn')) : txBusy ? t('status_refunding') : ''}
+              title={!canRefund ? t('refund') + ' ' + (info.minReached ? t('countdown') : '') : ''}
             >
               {txBusy ? t('status_refunding') : t('refund')}
             </GlassButton>
             <GlassButton 
               variant="secondary" 
               onClick={handleDraw} 
-              disabled={!info.minReached || info.drawn || txBusy}
-              title={!info.minReached ? t('draw_msg_fundraising') : info.drawn ? t('draw_msg_drawn') : txBusy ? t('status_participating') : ''}
+              disabled={!info.minReached || info.drawn || txBusy || notStarted || countdownActive}
+              title={
+                info.drawn ? t('drawn') :
+                notStarted ? t('not_started') :
+                !info.minReached ? t('draw_msg_fundraising') :
+                countdownActive ? t('draw_msg_countdown') : ''
+              }
             >
               {t('tryDraw')}
             </GlassButton>
+            <div style={{ flexBasis:'100%', fontSize:12, color:'#666' }}>
+              {!account && <span>{t('please_connect')}</span>}
+              {account && remaining <= 0 && !info.drawn && !notStarted && !countdownActive && <span>{t('exceed_limit')}</span>}
+            </div>
           </div>
         </>
       )}

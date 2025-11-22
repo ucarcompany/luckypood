@@ -221,9 +221,20 @@ export default function FloatingChat() {
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !token || !account || !sockRef.current) return;
+    if (!input.trim()) return;
+    if (!token) {
+      setMessages(m => [...m, { ts: Date.now()/1000, address: 'system', message: '尚未认证完成，稍等或重新打开聊天', from: 'system' }]);
+      return;
+    }
+    if (!account) {
+      setMessages(m => [...m, { ts: Date.now()/1000, address: 'system', message: '请先连接钱包', from: 'system' }]);
+      return;
+    }
+    if (!sockRef.current) {
+      setMessages(m => [...m, { ts: Date.now()/1000, address: 'system', message: '连接尚未建立', from: 'system' }]);
+      return;
+    }
     const msg = input.trim();
-    // Use support:send
     sockRef.current.emit('support:send', { address: account, token, message: msg });
     setInput('');
   };
@@ -247,8 +258,8 @@ export default function FloatingChat() {
         </ChatBody>
         <InputRow onSubmit={sendMessage}>
           {!account && <SendBtn type="button" onClick={connect}>连接</SendBtn>}
-          {account && <TextInput value={input} placeholder={connecting? '认证中...' : '输入消息'} onChange={e=>setInput(e.target.value)} />}
-          {account && <SendBtn disabled={!token || !input.trim()} type="submit">发送</SendBtn>}
+          {account && <TextInput value={input} placeholder={connecting? '认证中...' : (!token? '等待认证...' : '输入消息')} onChange={e=>setInput(e.target.value)} />}
+          {account && <SendBtn disabled={!token || !input.trim()} type="submit">{!token? '等待' : '发送'}</SendBtn>}
         </InputRow>
       </ChatWindow>
     </>
