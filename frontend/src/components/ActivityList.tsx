@@ -31,7 +31,30 @@ export default function ActivityList({ onRipple }: { onRipple?: (count: number) 
   ) : null
 
   return (
-    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
+    <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <h2 style={{ color: 'white', margin: 0, textShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>{t('activities')}</h2>
+        <button 
+          onClick={() => { refreshSilent(); }} 
+          disabled={refreshing}
+          style={{
+            background: 'rgba(255,255,255,0.2)',
+            border: '1px solid rgba(255,255,255,0.3)',
+            borderRadius: '20px',
+            padding: '8px 16px',
+            color: 'white',
+            cursor: refreshing ? 'not-allowed' : 'pointer',
+            backdropFilter: 'blur(10px)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}
+        >
+          <span style={{ display: 'inline-block', animation: refreshing ? 'spin 1s linear infinite' : 'none' }}>↻</span>
+          {refreshing ? t('refreshing') : t('refresh')}
+        </button>
+      </div>
+
       {errorBanner}
       
       {(!loading && pools.length===0) && (
@@ -51,6 +74,10 @@ export default function ActivityList({ onRipple }: { onRipple?: (count: number) 
           <ActivityCard info={p} onRefresh={refreshSilent} onParticipateSuccess={onRipple} />
         </div>
       ))}
+      
+      <style>{`
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+      `}</style>
     </div>
   )
 }

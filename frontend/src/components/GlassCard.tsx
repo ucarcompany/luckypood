@@ -1,65 +1,53 @@
 import styled from 'styled-components';
 
 export const GlassCard = styled.div`
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+  background: rgba(255, 255, 255, 0.85); /* 更不透明的白色，接近图1效果 */
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.8);
   padding: 24px;
-  color: white;
+  color: #333; /* 深色文字 */
   transition: transform 0.2s;
   margin-bottom: 20px;
   position: relative;
   overflow: hidden;
   
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 50%;
-    background: linear-gradient(to bottom, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 100%);
-    pointer-events: none;
-  }
-  
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.25);
+    box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.15);
   }
 `;
 
 export const GlassButton = styled.button<{ variant?: 'primary' | 'danger' | 'secondary' }>`
   background: ${props => {
-    if (props.variant === 'danger') return 'rgba(255, 59, 48, 0.4)';
-    if (props.variant === 'secondary') return 'rgba(142, 142, 147, 0.4)';
-    return 'rgba(0, 122, 255, 0.4)';
+    if (props.variant === 'danger') return '#fff'; // 退款白色
+    if (props.variant === 'secondary') return '#fff'; // 尝试开奖白色
+    return '#5856d6'; // 参与紫色
   }};
-  box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.1);
-  backdrop-filter: blur(4px);
+  color: ${props => {
+    if (props.variant === 'danger' || props.variant === 'secondary') return '#999';
+    return 'white';
+  }};
+  border: ${props => {
+    if (props.variant === 'danger' || props.variant === 'secondary') return '1px solid #eee';
+    return 'none';
+  }};
+  box-shadow: ${props => props.variant === 'primary' ? '0 4px 12px rgba(88, 86, 214, 0.3)' : 'none'};
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: white;
-  padding: 12px 20px;
+  padding: 10px 20px;
   font-weight: 600;
-  font-size: 16px;
+  font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
-  width: 100%;
-  margin-top: 10px;
+  min-width: 80px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
 
   &:hover {
-    background: ${props => {
-      if (props.variant === 'danger') return 'rgba(255, 59, 48, 0.6)';
-      if (props.variant === 'secondary') return 'rgba(142, 142, 147, 0.6)';
-      return 'rgba(0, 122, 255, 0.6)';
-    }};
+    opacity: 0.9;
     transform: scale(1.02);
   }
   
@@ -67,16 +55,18 @@ export const GlassButton = styled.button<{ variant?: 'primary' | 'danger' | 'sec
     opacity: 0.5;
     cursor: not-allowed;
     transform: none;
+    background: #f5f5f5;
+    color: #ccc;
   }
 `;
 
 export const ProgressBar = styled.div<{ percent: number }>`
   width: 100%;
-  height: 8px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
+  height: 12px;
+  background: #f0f0f5;
+  border-radius: 6px;
   overflow: hidden;
-  margin: 10px 0;
+  margin: 15px 0;
   position: relative;
 
   &::after {
@@ -86,32 +76,30 @@ export const ProgressBar = styled.div<{ percent: number }>`
     left: 0;
     height: 100%;
     width: ${props => Math.min(100, Math.max(0, props.percent))}%;
-    background: rgba(255, 255, 255, 0.8);
-    border-radius: 4px;
+    background: #5856d6; /* 紫色进度条 */
+    border-radius: 6px;
     transition: width 0.5s ease-out;
-    box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
   }
 `;
 
 export const CardTitle = styled.h3`
-  margin: 0 0 8px 0;
-  font-size: 20px;
+  margin: 0;
+  font-size: 18px;
   font-weight: 700;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  color: #000;
 `;
 
-export const CardContent = styled.p`
-  margin: 0 0 16px 0;
-  font-size: 14px;
-  line-height: 1.5;
-  opacity: 0.9;
+export const CardContent = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 `;
 
 export const CardImage = styled.img`
-  width: 100%;
-  height: 160px;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
   object-fit: cover;
-  border-radius: 12px;
-  margin-bottom: 16px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  border: 2px solid white;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 `;
