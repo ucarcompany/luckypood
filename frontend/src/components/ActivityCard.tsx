@@ -277,6 +277,7 @@ export default function ActivityCard({ info, onRefresh, onParticipateSuccess }: 
               variant="primary" 
               onClick={handleParticipate} 
               disabled={remaining <= 0 || txBusy}
+              title={remaining <= 0 ? t('exceed_limit') : txBusy ? t('status_participating') : ''}
             >
               {txBusy ? t('status_participating') : t('participate')}
             </GlassButton>
@@ -284,6 +285,7 @@ export default function ActivityCard({ info, onRefresh, onParticipateSuccess }: 
               variant="danger" 
               onClick={handleRefund} 
               disabled={!canRefund || txBusy}
+              title={!canRefund ? (!info.minReached ? t('fundraising') : t('drawn')) : txBusy ? t('status_refunding') : ''}
             >
               {txBusy ? t('status_refunding') : t('refund')}
             </GlassButton>
@@ -291,6 +293,7 @@ export default function ActivityCard({ info, onRefresh, onParticipateSuccess }: 
               variant="secondary" 
               onClick={handleDraw} 
               disabled={!info.minReached || info.drawn || txBusy}
+              title={!info.minReached ? t('draw_msg_fundraising') : info.drawn ? t('draw_msg_drawn') : txBusy ? t('status_participating') : ''}
             >
               {t('tryDraw')}
             </GlassButton>
