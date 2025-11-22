@@ -6,31 +6,12 @@ Write-Host "正在连接到服务器并更新代码..." -ForegroundColor Green
 # SSH 连接服务器并执行更新命令
 $commands = @"
 cd /opt/luckypood
-echo '拉取最新代码...'
+echo '📥 拉取最新代码...'
 git pull origin main
 
-echo '安装后端依赖...'
-cd backend
-npm install
-
-echo '构建后端...'
-npm run build
-
-echo '重启后端服务...'
-pm2 restart ecosystem.config.js --update-env
-
-echo '构建前端...'
-cd ../frontend
-npm install
-npm run build
-
-echo '重载 Nginx...'
-service nginx reload
-
-echo '检查服务状态...'
-pm2 status
-
-echo '部署完成!'
+echo '🚀 执行更新脚本...'
+chmod +x update-server.sh
+./update-server.sh
 "@
 
 # 执行 SSH 命令
