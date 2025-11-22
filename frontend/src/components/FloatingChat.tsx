@@ -14,10 +14,13 @@ const FloatButton = styled.button`
   width: 60px;
   height: 60px;
   border-radius: 30px;
-  background: rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+  /* Glassmorphism Style */
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.2);
+  
   color: white;
   font-size: 24px;
   cursor: pointer;
@@ -29,7 +32,8 @@ const FloatButton = styled.button`
 
   &:hover {
     transform: scale(1.1);
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.3);
   }
 `;
 
@@ -37,85 +41,109 @@ const ChatWindow = styled.div<{ isOpen: boolean }>`
   position: fixed;
   bottom: 100px;
   right: 30px;
-  width: 300px;
-  height: 400px;
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(20px);
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+  width: 320px;
+  height: 450px;
+  /* Glassmorphism Style */
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.15);
+  
   z-index: 100;
   display: ${props => props.isOpen ? 'flex' : 'none'};
   flex-direction: column;
   overflow: hidden;
   transform-origin: bottom right;
-  animation: fadeIn 0.3s ease;
+  animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   @keyframes fadeIn {
-    from { opacity: 0; transform: scale(0.8); }
-    to { opacity: 1; transform: scale(1); }
+    from { opacity: 0; transform: scale(0.9) translateY(20px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
   }
 `;
 
 const ChatHeader = styled.div`
-  padding: 15px;
-  background: rgba(0, 0, 0, 0.2);
-  color: white;
-  font-weight: bold;
+  padding: 16px 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-weight: 600;
+  font-size: 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.1);
 `;
 
 const ChatBody = styled.div`
   flex: 1;
-  padding: 12px;
-  color: rgba(255,255,255,0.9);
-  font-size: 13px;
+  padding: 16px;
+  color: #fff;
+  font-size: 14px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
+  
+  /* Custom Scrollbar */
+  &::-webkit-scrollbar { width: 6px; }
+  &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
 `;
 
 const Msg = styled.div<{ mine?: boolean }>`
   align-self: ${p=>p.mine? 'flex-end':'flex-start'};
-  max-width: 80%;
-  background: ${p=>p.mine? 'linear-gradient(135deg, rgba(0,140,255,0.4), rgba(0,80,180,0.6))':'rgba(255,255,255,0.15)'};
-  padding: 6px 10px;
-  border-radius: 12px;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  max-width: 85%;
+  background: ${p=>p.mine? 'linear-gradient(135deg, rgba(0,122,255,0.6), rgba(0,198,255,0.6))':'rgba(255,255,255,0.2)'};
+  padding: 8px 14px;
+  border-radius: 16px;
+  border-bottom-right-radius: ${p=>p.mine? '4px':'16px'};
+  border-bottom-left-radius: ${p=>!p.mine? '4px':'16px'};
+  backdrop-filter: blur(5px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   word-break: break-word;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  border: 1px solid rgba(255,255,255,0.1);
 `;
 
 const InputRow = styled.form`
   display: flex;
-  gap: 6px;
-  padding: 10px;
+  gap: 8px;
+  padding: 12px 16px;
   border-top: 1px solid rgba(255,255,255,0.15);
+  background: rgba(0,0,0,0.05);
 `;
 const TextInput = styled.input`
   flex: 1;
   background: rgba(255,255,255,0.15);
-  border: 1px solid rgba(255,255,255,0.25);
-  border-radius: 14px;
-  padding: 6px 10px;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 20px;
+  padding: 8px 14px;
   color: #fff;
-  font-size: 12px;
+  font-size: 14px;
   outline: none;
-  &:focus { border-color: rgba(255,255,255,0.6); }
+  transition: all 0.2s;
+  &::placeholder { color: rgba(255,255,255,0.5); }
+  &:focus { 
+    background: rgba(255,255,255,0.25);
+    border-color: rgba(255,255,255,0.5); 
+  }
 `;
 const SendBtn = styled.button`
-  background: linear-gradient(135deg,#1d8bff,#005bbb);
+  background: linear-gradient(135deg,#007aff,#00c6ff);
   color:#fff;
   border:none;
-  font-size:12px;
-  padding: 6px 12px;
-  border-radius: 14px;
+  font-weight: 600;
+  font-size:13px;
+  padding: 0 16px;
+  border-radius: 20px;
   cursor:pointer;
-  opacity:${p=>p.disabled?0.5:1};
+  opacity:${p=>p.disabled?0.6:1};
+  box-shadow: 0 2px 8px rgba(0,122,255,0.3);
+  transition: transform 0.1s;
+  &:active { transform: scale(0.96); }
 `;
 
 type ChatMsg = { ts: number; address: string; message: string };

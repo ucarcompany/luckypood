@@ -12,20 +12,19 @@ const Container = styled.div`
   height: 100vh;
   z-index: -1;
   overflow: hidden;
-  background: #021f2a; /* 深海背景过渡 */
+  background: linear-gradient(to bottom, #87CEEB, #00BFFF); /* 渐变天蓝色底色 */
 `;
 
 const CanvasWrap = styled.div`
   position: absolute;
   inset: 0;
-  pointer-events: none; /* 允许上层交互 */
+  pointer-events: none;
 `;
 
 const Content = styled.div`
   position: relative;
   z-index: 1;
   min-height: 100vh;
-  backdrop-filter: none;
 `;
 
 export interface WaterBackgroundRef {
@@ -36,25 +35,36 @@ interface Props {
   children: React.ReactNode;
 }
 
-// 程序化生成沙地纹理 (避免直接提交外部图片，用户可换成提供图片)
-function generateSandTexture(size = 512): THREE.Texture {
+// 生成泳池底部渐变纹理
+function generatePoolBottomTexture(size = 512): THREE.Texture {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d')!;
-  // 基础底色
-  ctx.fillStyle = '#eadfc7';
+  // 径向渐变模拟深浅
+  const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size);
+  grad.addColorStop(0, '#4fc3f7'); // 浅天蓝
+  grad.addColorStop(1, '#0288d1'); // 深蓝
+  ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
-  // 噪声颗粒
-  for (let i = 0; i < size * 40; i++) {
-    const x = Math.random() * size;
-    const y = Math.random() * size;
-    const g = 200 + Math.floor(Math.random() * 40);
-    ctx.fillStyle = `rgba(${g},${190 + Math.random()*30},${150 + Math.random()*20},${Math.random()*0.3})`;
-    ctx.fillRect(x, y, 1.2, 1.2);
+  
+  // 简单的焦散网格模拟 (Caustics pattern simulation)
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 2;
+  for(let i=0; i<size; i+=40) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i + Math.random()*20, size);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, i);
+    ctx.lineTo(size, i + Math.random()*20);
+    ctx.stroke();
   }
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(8, 8);
+  texture.repeat.set(4, 4);
   return texture;
 }
 
@@ -118,35 +128,38 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
     if (!mountEl) return;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2('#083044', 0.0025);
+    // 移除深色雾，改用清澈的淡蓝色雾或无雾，增强通透感
+    // scene.fog = new THREE.FogExp2('#083044', 0.0025); 
 
     const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 20000);
-    camera.position.set(-30, 35, 60); // 俯视角度带透视感
+    camera.position.set(-30, 35, 60); 
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // 开启透明背景，让 CSS 渐变透出来 (或者用 Scene background)
+    renderer.setClearColor(0x000000, 0); 
     mountEl.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // 环境光与定向光模拟水下氛围
-    scene.add(new THREE.AmbientLight(0x88bbee, 0.6));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    // 环境光增强
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
     dirLight.position.set(50, 100, -20);
     scene.add(dirLight);
 
-    // 沙地平面
-    const sandTexture = generateSandTexture();
+    // 泳池底部
+    const poolTexture = generatePoolBottomTexture();
     const waterNormals = generateWaterNormals();
-    const sandGeo = new THREE.PlaneGeometry(2000, 2000, 10, 10);
-    const sandMat = new THREE.MeshStandardMaterial({ map: sandTexture, roughness: 1, metalness: 0 });
-    const sand = new THREE.Mesh(sandGeo, sandMat);
-    sand.rotation.x = -Math.PI / 2;
-    sand.position.y = -8; // 水下偏移
-    scene.add(sand);
+    const bottomGeo = new THREE.PlaneGeometry(2000, 2000);
+    const bottomMat = new THREE.MeshBasicMaterial({ map: poolTexture }); // 使用 Basic 材质保持鲜艳
+    const bottom = new THREE.Mesh(bottomGeo, bottomMat);
+    bottom.rotation.x = -Math.PI / 2;
+    bottom.position.y = -15; // 稍微深一点
+    scene.add(bottom);
 
-    // 水面 (使用 three/examples Water)
+    // 水面
     const waterGeometry = new THREE.PlaneGeometry(1000, 1000);
     const water = new Water(waterGeometry, {
       textureWidth: 512,
@@ -154,11 +167,14 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
       waterNormals,
       sunDirection: dirLight.position.clone().normalize(),
       sunColor: 0xffffff,
-      waterColor: 0x0a6aa8,
-      distortionScale: 3.2,
-      fog: true
+      waterColor: 0x00ffff, // 青色/天蓝色
+      distortionScale: 1.5, // 稍微平静一点
+      fog: false
     });
     water.rotation.x = -Math.PI / 2;
+    // 调整透明度混合
+    water.material.transparent = true;
+    water.material.opacity = 0.6;
     scene.add(water);
     waterObjRef.current = water;
 
@@ -179,17 +195,17 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
 
     // 动画循环
     const clock = new THREE.Clock();
-    // 体积雾模拟: 使用粒子点云在水面下方缓慢漂浮
-    const particleCount = 4000;
+    // 气泡粒子 (改为白色/透明，模拟泳池气泡)
+    const particleCount = 2000;
     const positions = new Float32Array(particleCount * 3);
     for (let i=0;i<particleCount;i++) {
       positions[i*3] = (Math.random()-0.5)*800;
-      positions[i*3+1] = -5 - Math.random()*30; // below water surface
+      positions[i*3+1] = -2 - Math.random()*20; 
       positions[i*3+2] = (Math.random()-0.5)*800;
     }
     const particleGeo = new THREE.BufferGeometry();
     particleGeo.setAttribute('position', new THREE.BufferAttribute(positions,3));
-    const particleMat = new THREE.PointsMaterial({ color: 0x0b4c65, size: 4, sizeAttenuation: true, transparent: true, opacity:0.08, depthWrite:false });
+    const particleMat = new THREE.PointsMaterial({ color: 0xffffff, size: 3, sizeAttenuation: true, transparent: true, opacity:0.3, depthWrite:false });
     const particles = new THREE.Points(particleGeo, particleMat);
     scene.add(particles);
 
