@@ -142,53 +142,94 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    // 开启透明背景，让 CSS 渐变透出来 (或者用 Scene background)
+    // 开启透明背景，让 CSS 渐变透出来
     renderer.setClearColor(0x000000, 0); 
     mountEl.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
     // 环境光增强
-    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
     dirLight.position.set(50, 100, -20);
     scene.add(dirLight);
 
-    // 泳池底部
-    const poolTexture = generatePoolBottomTexture();
-    const waterNormals = generateWaterNormals();
-    const bottomGeo = new THREE.PlaneGeometry(2000, 2000);
-    const bottomMat = new THREE.MeshBasicMaterial({ map: poolTexture }); // 使用 Basic 材质保持鲜艳
-    const bottom = new THREE.Mesh(bottomGeo, bottomMat);
-    bottom.rotation.x = -Math.PI / 2;
-    bottom.position.y = -15; // 稍微深一点
-    scene.add(bottom);
-
+    // 移除实体底部，改用透明水面直接透出 CSS 背景，或者使用一个半透明的底部
+    // 为了“透明水”效果，我们不使用不透明的底部 Mesh，而是让 Water 材质本身透出背后的 CSS 渐变
+    // 但 Water 需要反射环境，如果没有环境，它会反射黑色。
+    // 我们保留一个极淡的底部网格，或者干脆不加底部，只依靠 Water 的颜色和 alpha。
+    
     // 水面
-    const waterGeometry = new THREE.PlaneGeometry(1000, 1000);
+    const waterGeometry = new THREE.PlaneGeometry(2000, 2000);
     const water = new Water(waterGeometry, {
       textureWidth: 512,
       textureHeight: 512,
-      waterNormals,
+      waterNormals: generateWaterNormals(),
       sunDirection: dirLight.position.clone().normalize(),
       sunColor: 0xffffff,
-      waterColor: 0x00ffff, // 青色/天蓝色
-      distortionScale: 1.5, // 稍微平静一点
-      fog: false
+      waterColor: 0xccf0ff, // 非常淡的青白色
+      distortionScale: 2.0,
+      fog: false,
+      alpha: 0.4 // 调整内部 alpha
     });
     water.rotation.x = -Math.PI / 2;
-    // 调整透明度混合
     water.material.transparent = true;
-    water.material.opacity = 0.6;
+    water.material.opacity = 0.4; // 整体透明度
+    water.material.side = THREE.DoubleSide;
     scene.add(water);
     waterObjRef.current = water;
+
+    // 交互式涟漪 (使用 expanding rings 模拟)
+    const ripples: THREE.Mesh[] = [];
+    const rippleGeo = new THREE.RingGeometry(0.1, 0.2, 32);
+    const rippleMat = new THREE.MeshBasicMaterial({ 
+      color: 0xffffff, 
+      transparent: true, 
+      opacity: 0.6, 
+      side: THREE.DoubleSide 
+    });
+
+    const spawnRipple = (x: number, z: number) => {
+      const mesh = new THREE.Mesh(rippleGeo, rippleMat.clone());
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(x, 0.05, z); // 略高于水面
+      mesh.userData = { age: 0, maxAge: 2.0 }; // 2秒寿命
+      scene.add(mesh);
+      ripples.push(mesh);
+    };
+
+    // Raycaster for interaction
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // 水平面 y=0
+
+    const handleInput = (clientX: number, clientY: number) => {
+      mouse.x = (clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const target = new THREE.Vector3();
+      if (raycaster.ray.intersectPlane(plane, target)) {
+        spawnRipple(target.x, target.z);
+      }
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      // 限制频率
+      if (Math.random() > 0.8) handleInput(e.clientX, e.clientY);
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0 && Math.random() > 0.8) {
+        handleInput(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('touchmove', onTouchMove);
 
     // 控制器 (仅用于调试，可禁用交互)
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enablePan = false;
     controls.enableZoom = false;
     controls.enableRotate = false;
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
 
     const onResize = () => {
       camera.aspect = window.innerWidth / window.innerHeight;
@@ -199,8 +240,8 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
 
     // 动画循环
     const clock = new THREE.Clock();
-    // 气泡粒子 (改为白色/透明，模拟泳池气泡)
-    const particleCount = 2000;
+    // 气泡粒子
+    const particleCount = 1000;
     const positions = new Float32Array(particleCount * 3);
     for (let i=0;i<particleCount;i++) {
       positions[i*3] = (Math.random()-0.5)*800;
@@ -209,22 +250,30 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
     }
     const particleGeo = new THREE.BufferGeometry();
     particleGeo.setAttribute('position', new THREE.BufferAttribute(positions,3));
-    const particleMat = new THREE.PointsMaterial({ color: 0xffffff, size: 3, sizeAttenuation: true, transparent: true, opacity:0.3, depthWrite:false });
+    const particleMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2, transparent: true, opacity:0.4 });
     const particles = new THREE.Points(particleGeo, particleMat);
     scene.add(particles);
 
     const animate = () => {
       const delta = clock.getDelta();
       if (waterObjRef.current) {
-        // 模拟涟漪队列: distortionScale 轻微波动
-        if (rippleQueueRef.current > 0) {
-          waterObjRef.current.material.uniforms.distortionScale.value = 3.2 + Math.sin(Date.now()*0.02)*0.8;
-          rippleQueueRef.current -= delta;
-        } else {
-          waterObjRef.current.material.uniforms.distortionScale.value = 3.2;
-        }
         waterObjRef.current.material.uniforms.time.value += delta;
       }
+      
+      // 更新涟漪
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        const r = ripples[i];
+        r.userData.age += delta;
+        const scale = 1 + r.userData.age * 15; // 扩散速度
+        r.scale.set(scale, scale, 1);
+        (r.material as THREE.MeshBasicMaterial).opacity = 0.6 * (1 - r.userData.age / r.userData.maxAge);
+        
+        if (r.userData.age >= r.userData.maxAge) {
+          scene.remove(r);
+          ripples.splice(i, 1);
+        }
+      }
+
       // 粒子缓慢上升漂浮
       const arr = particleGeo.getAttribute('position') as THREE.BufferAttribute;
       for (let i=0;i<particleCount;i++) {
@@ -241,6 +290,8 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
 
     return () => {
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('touchmove', onTouchMove);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       controls.dispose();
       renderer.dispose();
