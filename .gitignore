@@ -21,3 +21,7 @@ dist/
 backend/dist/
 frontend/dist/
 admin/dist/
+
+# deployment scripts
+deploy.py
+verify_deploy.py
