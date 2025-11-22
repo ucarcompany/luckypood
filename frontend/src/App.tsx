@@ -99,25 +99,27 @@ export default function App() {
   };
 
   return (
-    <WaterBackground ref={waterRef}>
-      <Announcement />
-      <Header>
-        <Title>Lucky Pool</Title>
-        <ButtonGroup>
-          <WalletButton onClick={switchNetwork}>
-            切换 BSC
-          </WalletButton>
-          <WalletButton onClick={() => window.open('https://bscscan.com', '_blank')}>
-            透明度
-          </WalletButton>
-          <WalletButton onClick={connect}>
-            {account ? `${account.slice(0,6)}...${account.slice(-4)}` : t('connect_wallet')}
-          </WalletButton>
-        </ButtonGroup>
-      </Header>
-      
-      <ActivityList onRipple={handleRipple} />
-    </WaterBackground>
-    <FloatingChat />
+    <>
+      <WaterBackground ref={waterRef}>
+        <Announcement />
+        <Header>
+          <Title>Lucky Pool</Title>
+          <ButtonGroup>
+            <WalletButton onClick={switchNetwork}>
+              切换 BSC
+            </WalletButton>
+            <WalletButton onClick={() => window.open('https://bscscan.com', '_blank')}>
+              透明度
+            </WalletButton>
+            <WalletButton onClick={connect}>
+              {account ? `${account.slice(0,6)}...${account.slice(-4)}` : t('connect_wallet')}
+            </WalletButton>
+          </ButtonGroup>
+        </Header>
+        
+        <ActivityList onRipple={handleRipple} />
+      </WaterBackground>
+      <FloatingChat />
+    </>
   )
 }

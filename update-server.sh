@@ -47,6 +47,19 @@ echo ""
 echo "🔄 重启后端服务..."
 cd backend
 pm2 restart ecosystem.config.js --update-env
+cd ..
+
+# 重载 Nginx
+echo ""
+echo "🔄 重载 Nginx..."
+service nginx reload
+
+echo "✅ 更新完成!"
+
+# 重载 Nginx 配置
+echo ""
+echo "🔄 重载 Nginx..."
+service nginx reload
 
 # 显示状态
 echo ""
