@@ -201,5 +201,26 @@ npm.cmd run -w admin dev -- --port=5174
 - 管理员拥有暂停与提现权限；请妥善保管私钥。
 
 ---
+## 10. UI 更新（3D 水面与浮动聊天）
+前端已替换为 Three.js 立体水面背景：
+- 具有透视相机（俯视角度）与动态波纹。调用 `triggerRipple(count)` 可临时增强水面扰动。
+- 沙地采用程序化生成纹理（避免直接提交图片）。你可以在 `WaterBackground.tsx` 中替换 `generateSandTexture()` 为直接加载你提供的海底沙子图片：
+	```ts
+	const texLoader = new THREE.TextureLoader();
+	const sandTexture = texLoader.load('/assets/sand.jpg');
+	sandTexture.wrapS = sandTexture.wrapT = THREE.RepeatWrapping;
+	sandTexture.repeat.set(8,8);
+	```
+	把图片放到 `frontend/public/assets/sand.jpg` 或使用 Vite 资源导入方式。
+- 浮动聊天按钮已确保可点击（背景 canvas 设为 `pointer-events: none`）。如需真正实时聊天，可在 `FloatingChat.tsx` 中集成 socket.io（项目已装客户端）。
+
+快速自定义：
+- 调整水颜色：修改 `waterColor`（十六进制值）。
+- 增强波纹：增大 `distortionScale` 或在 `triggerRipple` 中增加幅度。
+- 关闭雾：删除 `scene.fog` 或调低密度。
+
+性能建议：
+- 低端设备可把 `textureWidth/Height: 256`。
+- 将 Three.js 相关渲染逻辑拆到懒加载，减少初始 bundle 大小。
 
 更详细的使用与参数说明请见各子目录内的 README 与代码注释。
