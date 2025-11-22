@@ -4,6 +4,8 @@ import ActivityList from './components/ActivityList'
 import { useWeb3 } from './web3'
 import { useTranslation } from 'react-i18next'
 import WaterBackground, { WaterBackgroundRef } from './components/WaterBackground'
+import Announcement from './components/Announcement'
+import FloatingChat from './components/FloatingChat'
 import styled from 'styled-components'
 
 const Header = styled.header`
@@ -12,11 +14,12 @@ const Header = styled.header`
   justify-content: space-between;
   align-items: center;
   color: white;
-  background: rgba(0,0,0,0.1);
-  backdrop-filter: blur(5px);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
   position: sticky;
   top: 0;
   z-index: 10;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 `;
 
 const Title = styled.h1`
@@ -27,19 +30,26 @@ const Title = styled.h1`
   text-shadow: 0 2px 4px rgba(0,0,0,0.1);
 `;
 
+const ButtonGroup = styled.div`
+  display: flex;
+  gap: 10px;
+`;
+
 const WalletButton = styled.button`
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   color: white;
   padding: 8px 16px;
   border-radius: 20px;
   cursor: pointer;
   font-weight: 600;
-  backdrop-filter: blur(5px);
+  backdrop-filter: blur(10px);
   transition: all 0.2s;
+  font-size: 14px;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
   }
 `;
 
@@ -54,16 +64,60 @@ export default function App() {
     }
   }
 
+  const switchNetwork = async () => {
+    if (!window.ethereum) return;
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x38' }], // BSC Mainnet
+      });
+    } catch (error: any) {
+      if (error.code === 4902) {
+        try {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [
+              {
+                chainId: '0x38',
+                chainName: 'Binance Smart Chain',
+                nativeCurrency: {
+                  name: 'BNB',
+                  symbol: 'BNB',
+                  decimals: 18,
+                },
+                rpcUrls: ['https://bsc-dataseed.binance.org/'],
+                blockExplorerUrls: ['https://bscscan.com/'],
+              },
+            ],
+          });
+        } catch (addError) {
+          console.error(addError);
+        }
+      }
+      console.error(error);
+    }
+  };
+
   return (
     <WaterBackground ref={waterRef}>
+      <Announcement />
       <Header>
         <Title>Lucky Pool</Title>
-        <WalletButton onClick={connect}>
-          {account ? `${account.slice(0,6)}...${account.slice(-4)}` : t('connect_wallet')}
-        </WalletButton>
+        <ButtonGroup>
+          <WalletButton onClick={switchNetwork}>
+            切换 BSC
+          </WalletButton>
+          <WalletButton onClick={() => window.open('https://bscscan.com', '_blank')}>
+            透明度
+          </WalletButton>
+          <WalletButton onClick={connect}>
+            {account ? `${account.slice(0,6)}...${account.slice(-4)}` : t('connect_wallet')}
+          </WalletButton>
+        </ButtonGroup>
       </Header>
       
       <ActivityList onRipple={handleRipple} />
+      <FloatingChat />
     </WaterBackground>
   )
 }
