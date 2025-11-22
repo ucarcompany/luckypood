@@ -171,17 +171,20 @@ export default function FloatingChat() {
     const sock = io(BACKEND_URL, { transports:['websocket'], withCredentials:true });
     sockRef.current = sock;
     sock.on('connect', () => {
-      if (poolAddr) sock.emit('chat:join', { pool: poolAddr });
+      if (account) sock.emit('support:join', { address: account });
     });
-    sock.on('chat:history', (items: any[]) => {
-      const mapped = items.map(it => ({ ts: it.ts, address: it.address, message: it.message }));
+    sock.on('support:history', (items: any[]) => {
+      const mapped = items.map(it => ({ ts: it.ts, address: it.address, message: it.message, from: it.from }));
       setMessages(mapped);
     });
-    sock.on('chat:message', (msg: ChatMsg) => {
-      setMessages(m => [...m, msg]);
+    sock.on('support:message', (msg: any) => {
+      setMessages(m => [...m, { ts: msg.ts, address: msg.address, message: msg.message, from: msg.from }]);
+    });
+    sock.on('error', (err: any) => {
+      setMessages(m => [...m, { ts: Date.now()/1000, address: 'system', message: `Error: ${err.message}`, from: 'system' }]);
     });
     return () => { try { sock.disconnect(); } catch {} sockRef.current = null; };
-  }, [isOpen, poolAddr]);
+  }, [isOpen, account]);
 
   // Acquire auth token when account available & chat opened
   useEffect(() => {
@@ -214,8 +217,8 @@ export default function FloatingChat() {
     e.preventDefault();
     if (!input.trim() || !token || !account || !sockRef.current) return;
     const msg = input.trim();
-    sockRef.current.emit('chat:send', { pool: poolAddr, address: account, token, message: msg });
-    setMessages(m => [...m, { ts: Math.floor(Date.now()/1000), address: account.toLowerCase(), message: msg }]);
+    // Use support:send
+    sockRef.current.emit('support:send', { address: account, token, message: msg });
     setInput('');
   };
 
