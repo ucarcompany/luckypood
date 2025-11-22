@@ -117,7 +117,7 @@ export default function App() {
       </Header>
       
       <ActivityList onRipple={handleRipple} />
-      <FloatingChat />
     </WaterBackground>
+    <FloatingChat />
   )
 }

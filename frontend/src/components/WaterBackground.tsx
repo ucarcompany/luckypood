@@ -67,33 +67,27 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
 
     const fsSource = `
       precision mediump float;
-      uniform sampler2D u_image;
       uniform float u_time;
       varying vec2 v_texCoord;
 
       void main() {
-        vec2 uv = v_texCoord;
+        vec2 uv = v_texCoord * 6.0; // Scale up for more ripples
+        float time = u_time * 0.5;
         
-        // Dynamic water effect
-        float speed = 1.5;
-        float frequency = 8.0;
-        float amplitude = 0.003;
+        vec2 p = uv;
+        float c = 1.0;
+        float inten = 0.05;
+
+        for (int n = 0; n < 4; n++) {
+          float t = time * (1.0 - (3.0 / float(n+1)));
+          p = p + vec2(cos(t - p.x) + sin(t + p.y), sin(t - p.y) + cos(t + p.x));
+          c += 1.0/length(vec2(p.x / (sin(p.x+t)/inten), p.y / (cos(p.y+t)/inten)));
+        }
+        c /= 4.0;
+        c = 1.5 - sqrt(c);
         
-        // Create multiple wave layers for realism
-        float wave1 = sin(uv.y * frequency + u_time * speed) * amplitude;
-        float wave2 = cos(uv.x * frequency * 0.8 + u_time * speed * 1.2) * amplitude;
-        float wave3 = sin((uv.x + uv.y) * frequency * 1.5 + u_time * speed * 0.5) * amplitude * 0.5;
-        
-        vec2 distortion = vec2(wave2 + wave3, wave1 + wave3);
-        
-        // Sample texture with distortion
-        vec4 color = texture2D(u_image, uv + distortion);
-        
-        // Add some "caustics" or light reflection simulation
-        float light = sin(uv.x * 20.0 + u_time * 2.0) * sin(uv.y * 20.0 + u_time) * 0.05;
-        color.rgb += light;
-        
-        gl_FragColor = color;
+        vec3 color = vec3(0.0, 0.3, 0.5) + vec3(c*c*c*c) * 0.6; // Deep blue with bright caustics
+        gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
       }
     `;
 
@@ -149,7 +143,6 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
     const positionLoc = gl.getAttribLocation(program, 'a_position');
     const texCoordLoc = gl.getAttribLocation(program, 'a_texCoord');
     const timeLoc = gl.getUniformLocation(program, 'u_time');
-    const imageLoc = gl.getUniformLocation(program, 'u_image');
 
     gl.enableVertexAttribArray(positionLoc);
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
@@ -158,23 +151,6 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
     gl.enableVertexAttribArray(texCoordLoc);
     gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
     gl.vertexAttribPointer(texCoordLoc, 2, gl.FLOAT, false, 0, 0);
-
-    // Load Texture
-    const texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-
-    const image = new Image();
-    image.crossOrigin = "anonymous";
-    // High quality water texture
-    image.src = "https://images.unsplash.com/photo-1505118380757-91f5f5632de0?q=80&w=2071&auto=format&fit=crop";
-    image.onload = () => {
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-    };
 
     // Animation Loop
     const render = (now: number) => {
