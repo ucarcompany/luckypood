@@ -746,6 +746,23 @@ function randomToken(len = 32) {
   return Array.from(crypto.getRandomValues(new Uint8Array(len))).map(b=>b.toString(16).padStart(2,'0')).join('')
 }
 
+// Rate limiting: 10 messages per minute
+const chatRateLimit = new Map<string, { count: number; start: number }>();
+const RATE_LIMIT_WINDOW = 60 * 1000;
+const RATE_LIMIT_MAX = 10;
+
+function checkRateLimit(address: string): boolean {
+  const now = Date.now();
+  const record = chatRateLimit.get(address);
+  if (!record || now - record.start > RATE_LIMIT_WINDOW) {
+    chatRateLimit.set(address, { count: 1, start: now });
+    return true;
+  }
+  if (record.count >= RATE_LIMIT_MAX) return false;
+  record.count++;
+  return true;
+}
+
 function sanitizeMessage(s: string): string {
   let t = String(s || '')
   t = t.replace(/[\r\n\t]+/g, ' ')
