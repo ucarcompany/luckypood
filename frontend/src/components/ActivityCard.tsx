@@ -50,8 +50,6 @@ const StatusBadge = styled.span<{ status: 'active' | 'ended' | 'pending' }>`
   font-weight: bold;
   margin-left: auto;
 `;
-  margin-left: auto;
-;
 
 export default function ActivityCard({ info, onRefresh, onParticipateSuccess }: { info: PoolInfo, onRefresh?: () => void, onParticipateSuccess?: (count: number) => void }) {
   const { t } = useTranslation()
