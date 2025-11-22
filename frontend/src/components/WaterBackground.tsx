@@ -29,7 +29,7 @@ const Container = styled.div`
     left: 0;
     right: 0;
     bottom: 0;
-    background-image: url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=2073&auto=format&fit=crop');
+    background-image: url('https://images.unsplash.com/photo-1505118380757-91f5f5632de0?q=80&w=2071&auto=format&fit=crop');
     background-size: cover;
     background-position: center;
     opacity: 0.8;
