@@ -9,18 +9,20 @@ import FloatingChat from './components/FloatingChat'
 import styled from 'styled-components'
 
 const Header = styled.header`
-  padding: 20px;
+  padding: 18px 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   color: white;
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(16px) saturate(160%);
   position: sticky;
   top: 0;
   z-index: 10;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  pointer-events: auto; /* 确保可点击 */
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  pointer-events: auto;
+  flex-wrap: wrap;
+  gap: 14px;
 `;
 
 const Title = styled.h1`
@@ -34,24 +36,52 @@ const Title = styled.h1`
 const ButtonGroup = styled.div`
   display: flex;
   gap: 10px;
-  pointer-events: auto; /* 确保可点击 */
+  pointer-events: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
 `;
 
 const WalletButton = styled.button`
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.08));
+  border: 1px solid rgba(255, 255, 255, 0.35);
   color: white;
-  padding: 8px 16px;
-  border-radius: 20px;
+  padding: 8px 18px;
+  border-radius: 24px;
   cursor: pointer;
   font-weight: 600;
-  backdrop-filter: blur(10px);
-  transition: all 0.2s;
-  font-size: 14px;
+  backdrop-filter: blur(14px) saturate(160%);
+  transition: all 0.22s cubic-bezier(.17,.67,.27,.99);
+  font-size: 13px;
+  letter-spacing: .3px;
+  position: relative;
+  overflow: hidden;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(115deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.35) 55%, rgba(255,255,255,0) 70%);
+    opacity: .65;
+    pointer-events: none;
+  }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.2);
-    transform: translateY(-1px);
+    background: linear-gradient(145deg, rgba(255,255,255,0.28), rgba(255,255,255,0.12));
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  }
+
+  &:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25) inset;
+  }
+
+  @media (max-width: 600px) {
+    flex: 1 0 calc(33.33% - 8px);
+    text-align: center;
+    font-size: 12px;
+    padding: 6px 10px;
   }
 `;
 
@@ -77,7 +107,7 @@ export default function App() {
     try {
       await window.ethereum.request({
         method: 'wallet_switchEthereumChain',
-        params: [{ chainId: '0x38' }], // BSC Mainnet
+        params: [{ chainId: '0x61' }], // BSC Testnet
       });
     } catch (error: any) {
       if (error.code === 4902) {
@@ -86,21 +116,15 @@ export default function App() {
             method: 'wallet_addEthereumChain',
             params: [
               {
-                chainId: '0x38',
-                chainName: 'Binance Smart Chain',
-                nativeCurrency: {
-                  name: 'BNB',
-                  symbol: 'BNB',
-                  decimals: 18,
-                },
-                rpcUrls: ['https://bsc-dataseed.binance.org/'],
-                blockExplorerUrls: ['https://bscscan.com/'],
-              },
-            ],
+                chainId: '0x61',
+                chainName: 'Binance Smart Chain Testnet',
+                nativeCurrency: { name: 'tBNB', symbol: 'tBNB', decimals: 18 },
+                rpcUrls: ['https://data-seed-prebsc-1-s1.binance.org:8545/'],
+                blockExplorerUrls: ['https://testnet.bscscan.com/'],
+              }
+            ]
           });
-        } catch (addError) {
-          console.error(addError);
-        }
+        } catch (addError) { console.error(addError); }
       }
       console.error(error);
     }

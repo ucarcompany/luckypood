@@ -1,22 +1,57 @@
 import styled from 'styled-components';
 
 export const GlassCard = styled.div`
-  background: rgba(255, 255, 255, 0.25); /* 透明玻璃质感 */
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  padding: 24px;
-  color: #333;
-  transition: transform 0.2s;
-  margin-bottom: 20px;
+  /* 高级透明磨砂玻璃：更弱的底色 + 体积光感渐变 */
+  background: linear-gradient(
+    145deg,
+    rgba(255,255,255,0.35) 0%,
+    rgba(255,255,255,0.18) 40%,
+    rgba(255,255,255,0.12) 100%
+  );
+  backdrop-filter: blur(28px) saturate(190%) contrast(105%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%) contrast(105%);
+  border-radius: 28px;
+  border: 1px solid rgba(255,255,255,0.45);
+  border-top: 1px solid rgba(255,255,255,0.65);
+  border-left: 1px solid rgba(255,255,255,0.55);
+  padding: 26px 28px;
+  color: #0e1116;
+  box-shadow:
+    0 4px 12px -2px rgba(0,0,0,0.08),
+    0 8px 32px 0 rgba(31,38,135,0.12),
+    inset 0 0 0 0 rgba(255,255,255,0.3);
   position: relative;
   overflow: hidden;
-  
+  transition: box-shadow .35s cubic-bezier(.17,.67,.27,.99), transform .25s;
+  margin: 18px 0 26px;
+
+  &::before { /* 内部柔光 */
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 25% 15%, rgba(255,255,255,0.55), rgba(255,255,255,0) 60%);
+    pointer-events: none;
+    mix-blend-mode: overlay;
+  }
+
+  &::after { /* 斜向高光线条 */
+    content: '';
+    position: absolute;
+    top: -30%;
+    left: -10%;
+    width: 140%;
+    height: 200%;
+    background: linear-gradient(115deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 45%, rgba(255,255,255,0) 60%);
+    opacity: .55;
+    transform: rotate(3deg);
+    pointer-events: none;
+  }
+
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.15);
+    transform: translateY(-4px);
+    box-shadow:
+      0 6px 14px -2px rgba(0,0,0,0.12),
+      0 12px 42px 4px rgba(31,38,135,0.18);
   }
 `;
 

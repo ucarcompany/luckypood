@@ -172,7 +172,9 @@ export default function FloatingChat() {
   // Initialize socket on open
   useEffect(() => {
     if (!isOpen) return; if (sockRef.current) return;
-    const sock = io(BACKEND_URL, { transports:['websocket'], withCredentials:true });
+    // 统一入口：如果没配置则回退到当前 origin，确保 socket.io 通过同域反代 /socket.io
+    const base = BACKEND_URL || window.location.origin;
+    const sock = io(base, { path: '/socket.io', transports:['websocket'], withCredentials:true, reconnectionAttempts: 5, reconnectionDelay: 1200 });
     sockRef.current = sock;
     sock.on('connect', () => {
       if (account) sock.emit('support:join', { address: account });
@@ -184,8 +186,8 @@ export default function FloatingChat() {
     sock.on('support:message', (msg: any) => {
       setMessages(m => [...m, { ts: msg.ts, address: msg.address, message: msg.message, from: msg.from }]);
     });
-    sock.on('error', (err: any) => {
-      setMessages(m => [...m, { ts: Date.now()/1000, address: 'system', message: `Error: ${err.message}`, from: 'system' }]);
+    sock.on('connect_error', (err: any) => {
+      setMessages(m => [...m, { ts: Date.now()/1000, address: 'system', message: `连接错误: ${err.message}`, from: 'system' }]);
     });
     return () => { try { sock.disconnect(); } catch {} sockRef.current = null; };
   }, [isOpen, account]);
