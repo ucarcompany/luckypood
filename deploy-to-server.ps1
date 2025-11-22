@@ -19,6 +19,14 @@ npm run build
 echo '重启后端服务...'
 pm2 restart ecosystem.config.js --update-env
 
+echo '构建前端...'
+cd ../frontend
+npm install
+npm run build
+
+echo '重载 Nginx...'
+service nginx reload
+
 echo '检查服务状态...'
 pm2 status
 
@@ -26,6 +34,6 @@ echo '部署完成!'
 "@
 
 # 执行 SSH 命令
-ssh root@instance-wh7145ru "bash -c '$commands'"
+ssh root@38.22.95.235 "bash -c '$commands'"
 
 Write-Host "部署完成！" -ForegroundColor Green

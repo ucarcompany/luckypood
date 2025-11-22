@@ -1,155 +1,69 @@
-import { useEffect, useMemo, useState } from 'react'
-import { BrowserProvider } from 'ethers'
+import { useRef } from 'react'
 import './styles.css'
 import ActivityList from './components/ActivityList'
-import Transparency from './pages/Transparency'
-import Game from './game/Game'
-import DebugPanel from './components/DebugPanel'
 import { useWeb3 } from './web3'
 import { useTranslation } from 'react-i18next'
-import i18n from './i18n'
-import { PUBLIC_URL } from './config'
+import WaterBackground, { WaterBackgroundRef } from './components/WaterBackground'
+import styled from 'styled-components'
 
-const bscTestnet = {
-  chainId: 97,
-  chainIdHex: '0x61',
-  name: 'BSC Testnet'
-}
+const Header = styled.header
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: white;
+  background: rgba(0,0,0,0.1);
+  backdrop-filter: blur(5px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+;
+
+const Title = styled.h1
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+;
+
+const WalletButton = styled.button
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-weight: 600;
+  backdrop-filter: blur(5px);
+  transition: all 0.2s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+;
 
 export default function App() {
   const { t } = useTranslation()
-  const { provider, account, chainIdHex, connect } = useWeb3()
-  const [tab, setTab] = useState<'game'|'list'|'transparency'>('game')
-  const [lang, setLang] = useState(i18n.language)
+  const { account, connect } = useWeb3()
+  const waterRef = useRef<WaterBackgroundRef>(null)
 
-  const onLangChange = (v: string) => {
-    setLang(v)
-    i18n.changeLanguage(v)
-    try { localStorage.setItem('lang', v) } catch {}
-  }
-
-  const switchToBscTestnet = async () => {
-    if (!(window as any).ethereum) return
-    try {
-      await (window as any).ethereum.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: bscTestnet.chainIdHex }]
-      })
-    } catch (switchError: any) {
-      if (switchError.code === 4902) {
-        await (window as any).ethereum.request({
-          method: 'wallet_addEthereumChain',
-          params: [{
-            chainId: bscTestnet.chainIdHex,
-            chainName: bscTestnet.name,
-            nativeCurrency: { name: 'tBNB', symbol: 'tBNB', decimals: 18 },
-            rpcUrls: ['https://data-seed-prebsc-1-s1.binance.org:8545/'],
-            blockExplorerUrls: ['https://testnet.bscscan.com']
-          }]
-        })
-      } else {
-        console.error(switchError)
-      }
+  const handleRipple = (count: number) => {
+    if (waterRef.current) {
+      waterRef.current.triggerRipple(count)
     }
   }
 
-  if (tab === 'game') {
-    return (
-      <div>
-        {/* Overlay Header for Game Mode */}
-        <div style={{position: 'absolute', top: 10, right: 10, zIndex: 100, display: 'flex', gap: 10}}>
-           <button onClick={()=>setTab('list')} style={{background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid white'}}>Classic View</button>
-           {!account && <button className="btn-primary" onClick={connect}>{t('connect')}</button>}
-        </div>
-        <Game walletAddress={account || ''} />
-      </div>
-    )
-  }
-
   return (
-    <div className="container">
-      <div className="koi-bg">
-        <div className="koi-dot one" />
-        <div className="koi-dot two" />
-      </div>
-      <header>
-        <div className="title">
-          <h1>{t('title')}</h1>
-          <span className="subtitle">{t('subtitle_tagline')}</span>
-        </div>
-        <div className="header-actions" style={{display:'flex', alignItems:'center', gap:8}}>
-          <button onClick={()=>setTab('game')} className="btn-primary" style={{background: '#2e8b57'}}>Enter World</button>
-          <select value={lang} onChange={(e)=>onLangChange(e.target.value)} style={{padding:'6px 8px', borderRadius:8}}>
-            <option value="zh">简体中文</option>
-            <option value="en">English</option>
-          </select>
-          {account ? (
-            <span className="badge">{account.slice(0, 6)}...{account.slice(-4)}</span>
-          ) : (
-            <button className="btn-primary" onClick={connect}>{t('connect')}</button>
-          )}
-        </div>
-      </header>
-
-      <section>
-        <div className="hero">
-            <h2>{t('wish_pool')}</h2>
-          <p>{t('subtitle_tagline')}</p>
-            <p style={{color:'#94a3b8', fontSize:12, marginTop:6, whiteSpace:'pre-line'}}>{t('hero_note')}</p>
-          <svg viewBox="0 0 1440 320" preserveAspectRatio="none" aria-hidden>
-            <path fill="var(--wave)" fillOpacity="0.3" d="M0,128L60,160C120,192,240,256,360,245.3C480,235,600,149,720,138.7C840,128,960,192,1080,208C1200,224,1320,192,1380,176L1440,160L1440,320L1380,320C1320,320,1200,320,1080,320C960,320,840,320,720,320C600,320,480,320,360,320C240,320,120,320,60,320L0,320Z"></path>
-          </svg>
-        </div>
-        <div className="ripples"><div className="ripple r1"></div><div className="ripple r2"></div><div className="ripple r3"></div></div>
-        <p className="subtitle" style={{marginTop:6}}>{t('currentNetwork')}: {chainIdHex ?? '...'}</p>
-        <button onClick={switchToBscTestnet}>{t('switchToBscTestnet')}</button>
-      </section>
-
-      <section>
-        <div style={{display:'flex', gap:8, marginBottom:10}}>
-          <button onClick={()=>setTab('list')} disabled={tab==='list'}>{t('tab_list')}</button>
-          <button onClick={()=>setTab('transparency')} disabled={tab==='transparency'}>{t('tab_transparency')}</button>
-          {(() => {
-            const params = new URLSearchParams(window.location.search)
-            const show = params.get('debug') === '1' || localStorage.getItem('debug') === '1'
-            if (!show) return null
-            return <span style={{marginLeft:8, fontSize:12, color:'#64748b'}}>Debug on</span>
-          })()}
-        </div>
-        {tab==='list' ? (
-          <>
-            <h2>{t('activities')}</h2>
-            <ActivityList />
-            {(() => {
-              const params = new URLSearchParams(window.location.search)
-              const show = params.get('debug') === '1' || localStorage.getItem('debug') === '1'
-              return show ? <DebugPanel /> : null
-            })()}
-          </>
-        ) : (
-          <Transparency />
-        )}
-      </section>
-
-      <footer>
-        <small>{t('footer_note')}</small>
-        <div style={{marginTop:8, display:'flex', gap:8, flexWrap:'wrap'}}>
-          {(() => {
-            const dappUrl = (PUBLIC_URL && PUBLIC_URL.length>0) ? PUBLIC_URL : (window?.location?.origin || '')
-            const mm = `https://metamask.app.link/dapp/${dappUrl.replace(/^https?:\/\//,'')}`
-            const okx = `okx://wallet/dapp?url=${encodeURIComponent(dappUrl)}`
-            // 简化：只负责唤起币安 App
-            const binanceApp = 'binance://'
-            return (
-              <>
-                <a href={mm} target="_blank" rel="noreferrer"><button>{t('open_metamask')}</button></a>
-                <a href={okx}><button>{t('open_okx')}</button></a>
-                <a href={binanceApp}><button>{t('open_binance')}</button></a>
-              </>
-            )
-          })()}
-        </div>
-      </footer>
-    </div>
+    <WaterBackground ref={waterRef}>
+      <Header>
+        <Title>Lucky Pool</Title>
+        <WalletButton onClick={connect}>
+          {account ? \\...\\ : t('connect_wallet')}
+        </WalletButton>
+      </Header>
+      
+      <ActivityList onRipple={handleRipple} />
+    </WaterBackground>
   )
 }
