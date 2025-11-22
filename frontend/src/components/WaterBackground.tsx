@@ -142,6 +142,40 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+// 生成圆形粒子纹理
+function generateCircleTexture(): THREE.Texture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 32;
+  canvas.height = 32;
+  const ctx = canvas.getContext('2d')!;
+  ctx.beginPath();
+  ctx.arc(16, 16, 14, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  const texture = new THREE.CanvasTexture(canvas);
+  return texture;
+}
+
+const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children }, ref) => {
+  const mountRef = useRef<HTMLDivElement>(null);
+  const waterObjRef = useRef<Water>();
+  const rippleQueueRef = useRef<number>(0);
+  const rendererRef = useRef<THREE.WebGLRenderer>();
+  const animationRef = useRef<number>();
+
+  useEffect(() => {
+    const mountEl = mountRef.current;
+    if (!mountEl) return;
+
+    const scene = new THREE.Scene();
+    
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 20000);
+    camera.position.set(-30, 35, 60); 
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     // 开启透明背景，让 CSS 渐变透出来
     renderer.setClearColor(0x000000, 0); 
     mountEl.appendChild(renderer.domElement);
@@ -153,11 +187,6 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
     dirLight.position.set(50, 100, -20);
     scene.add(dirLight);
 
-    // 移除实体底部，改用透明水面直接透出 CSS 背景，或者使用一个半透明的底部
-    // 为了“透明水”效果，我们不使用不透明的底部 Mesh，而是让 Water 材质本身透出背后的 CSS 渐变
-    // 但 Water 需要反射环境，如果没有环境，它会反射黑色。
-    // 我们保留一个极淡的底部网格，或者干脆不加底部，只依靠 Water 的颜色和 alpha。
-    
     // 水面
     const waterGeometry = new THREE.PlaneGeometry(2000, 2000);
     const water = new Water(waterGeometry, {
@@ -167,20 +196,20 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
       sunDirection: dirLight.position.clone().normalize(),
       sunColor: 0xffffff,
       waterColor: 0xccf0ff, // 非常淡的青白色
-      distortionScale: 2.0,
+      distortionScale: 8.0, // 增加扭曲度，打破直线感
       fog: false,
-      alpha: 0.4 // 调整内部 alpha
+      alpha: 0.3 // 更透明
     });
     water.rotation.x = -Math.PI / 2;
     water.material.transparent = true;
-    water.material.opacity = 0.4; // 整体透明度
+    water.material.opacity = 0.3; // 整体透明度
     water.material.side = THREE.DoubleSide;
     scene.add(water);
     waterObjRef.current = water;
 
     // 交互式涟漪 (使用 expanding rings 模拟)
     const ripples: THREE.Mesh[] = [];
-    const rippleGeo = new THREE.RingGeometry(0.1, 0.2, 32);
+    const rippleGeo = new THREE.RingGeometry(0.1, 0.2, 64); // 增加分段数，更圆滑
     const rippleMat = new THREE.MeshBasicMaterial({ 
       color: 0xffffff, 
       transparent: true, 
@@ -250,7 +279,17 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
     }
     const particleGeo = new THREE.BufferGeometry();
     particleGeo.setAttribute('position', new THREE.BufferAttribute(positions,3));
-    const particleMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2, transparent: true, opacity:0.4 });
+    
+    // 使用圆形纹理
+    const particleTexture = generateCircleTexture();
+    const particleMat = new THREE.PointsMaterial({ 
+      color: 0xffffff, 
+      size: 2, 
+      map: particleTexture,
+      transparent: true, 
+      opacity: 0.4,
+      alphaTest: 0.1 // 去除透明边缘
+    });
     const particles = new THREE.Points(particleGeo, particleMat);
     scene.add(particles);
 

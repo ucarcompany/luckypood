@@ -20,6 +20,7 @@ const Header = styled.header`
   top: 0;
   z-index: 10;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  pointer-events: auto; /* 确保可点击 */
 `;
 
 const Title = styled.h1`
@@ -33,6 +34,7 @@ const Title = styled.h1`
 const ButtonGroup = styled.div`
   display: flex;
   gap: 10px;
+  pointer-events: auto; /* 确保可点击 */
 `;
 
 const WalletButton = styled.button`
@@ -54,7 +56,7 @@ const WalletButton = styled.button`
 `;
 
 export default function App() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { account, connect } = useWeb3()
   const waterRef = useRef<WaterBackgroundRef>(null)
 
@@ -63,6 +65,12 @@ export default function App() {
       waterRef.current.triggerRipple(count)
     }
   }
+
+  const toggleLanguage = () => {
+    const newLang = i18n.language.startsWith('zh') ? 'en' : 'zh';
+    i18n.changeLanguage(newLang);
+    localStorage.setItem('lang', newLang);
+  };
 
   const switchNetwork = async () => {
     if (!window.ethereum) return;
@@ -104,17 +112,17 @@ export default function App() {
         <Announcement />
         <Header>
           <Title>Lucky Pool</Title>
-          <ButtonGroup>
-            <WalletButton onClick={switchNetwork}>
-              切换 BSC
-            </WalletButton>
-            <WalletButton onClick={() => window.open('https://bscscan.com', '_blank')}>
-              透明度
-            </WalletButton>
-            <WalletButton onClick={connect}>
-              {account ? `${account.slice(0,6)}...${account.slice(-4)}` : t('connect_wallet')}
-            </WalletButton>
-          </ButtonGroup>
+        <ButtonGroup>
+          <WalletButton onClick={toggleLanguage}>
+            {i18n.language.startsWith('zh') ? 'English' : '中文'}
+          </WalletButton>
+          <WalletButton onClick={switchNetwork}>
+            {t('switchToBscTestnet')}
+          </WalletButton>
+          <WalletButton onClick={connect}>
+            {account ? `${account.slice(0, 6)}...${account.slice(-4)}` : t('connect')}
+          </WalletButton>
+        </ButtonGroup>
         </Header>
         
         <ActivityList onRipple={handleRipple} />

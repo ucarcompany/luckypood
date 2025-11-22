@@ -19,7 +19,7 @@ const Container = styled.div`
 
 const Text = styled.div`
   white-space: nowrap;
-  animation: ${scroll} 20s linear infinite;
+  animation: ${scroll} 60s linear infinite;
   padding-left: 100%;
   display: inline-block;
   font-size: 14px;
