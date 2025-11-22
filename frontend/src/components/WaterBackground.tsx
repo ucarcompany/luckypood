@@ -58,6 +58,54 @@ function generateSandTexture(size = 512): THREE.Texture {
   return texture;
 }
 
+// 简单 Perlin 噪声，用于水面法线贴图生成
+function perlin(x: number, y: number): number {
+  function fade(t: number) { return t*t*t*(t*(t*6-15)+10) }
+  function lerp(a: number, b: number, t: number) { return a + (b-a)*t }
+  function grad(hash: number, x: number, y: number) {
+    switch(hash & 3) { case 0: return  x + y; case 1: return -x + y; case 2: return x - y; case 3: return -x - y; default: return 0; }
+  }
+  const X = Math.floor(x) & 255; const Y = Math.floor(y) & 255;
+  x -= Math.floor(x); y -= Math.floor(y);
+  const u = fade(x); const v = fade(y);
+  const p: number[] = []; for (let i=0;i<512;i++) p[i] = perm[i & 255];
+  const aa = p[X     + p[Y    ]];
+  const ab = p[X     + p[Y + 1]];
+  const ba = p[X + 1 + p[Y    ]];
+  const bb = p[X + 1 + p[Y + 1]];
+  return lerp(lerp(grad(aa,x,y), grad(ba,x-1,y), u), lerp(grad(ab,x,y-1), grad(bb,x-1,y-1), u), v);
+}
+const perm = Array.from({length:256},()=>Math.floor(Math.random()*256));
+
+function generateWaterNormals(size=256): THREE.Texture {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const imgData = ctx.createImageData(size, size);
+  for (let y=0;y<size;y++) {
+    for (let x=0;x<size;x++) {
+      const nx = perlin(x/32, y/32);
+      const ny = perlin(x/32+100, y/32+100);
+      const nz = 1.0;
+      // Normalize rough vector
+      const len = Math.sqrt(nx*nx+ny*ny+nz*nz) || 1;
+      const r = ((nx/len)+1)*127;
+      const g = ((ny/len)+1)*127;
+      const b = ((nz/len)+1)*127;
+      const i = (y*size + x)*4;
+      imgData.data[i] = r;
+      imgData.data[i+1] = g;
+      imgData.data[i+2] = b;
+      imgData.data[i+3] = 255;
+    }
+  }
+  ctx.putImageData(imgData,0,0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(4,4);
+  return tex;
+}
+
 const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children }, ref) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const waterObjRef = useRef<Water>();
@@ -90,6 +138,7 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
 
     // 沙地平面
     const sandTexture = generateSandTexture();
+    const waterNormals = generateWaterNormals();
     const sandGeo = new THREE.PlaneGeometry(2000, 2000, 10, 10);
     const sandMat = new THREE.MeshStandardMaterial({ map: sandTexture, roughness: 1, metalness: 0 });
     const sand = new THREE.Mesh(sandGeo, sandMat);
@@ -102,7 +151,7 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
     const water = new Water(waterGeometry, {
       textureWidth: 512,
       textureHeight: 512,
-      waterNormals: sandTexture, // 临时使用沙纹理做扰动，可替换为法线贴图
+      waterNormals,
       sunDirection: dirLight.position.clone().normalize(),
       sunColor: 0xffffff,
       waterColor: 0x0a6aa8,
@@ -130,6 +179,20 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
 
     // 动画循环
     const clock = new THREE.Clock();
+    // 体积雾模拟: 使用粒子点云在水面下方缓慢漂浮
+    const particleCount = 4000;
+    const positions = new Float32Array(particleCount * 3);
+    for (let i=0;i<particleCount;i++) {
+      positions[i*3] = (Math.random()-0.5)*800;
+      positions[i*3+1] = -5 - Math.random()*30; // below water surface
+      positions[i*3+2] = (Math.random()-0.5)*800;
+    }
+    const particleGeo = new THREE.BufferGeometry();
+    particleGeo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+    const particleMat = new THREE.PointsMaterial({ color: 0x0b4c65, size: 4, sizeAttenuation: true, transparent: true, opacity:0.08, depthWrite:false });
+    const particles = new THREE.Points(particleGeo, particleMat);
+    scene.add(particles);
+
     const animate = () => {
       const delta = clock.getDelta();
       if (waterObjRef.current) {
@@ -142,6 +205,14 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
         }
         waterObjRef.current.material.uniforms.time.value += delta;
       }
+      // 粒子缓慢上升漂浮
+      const arr = particleGeo.getAttribute('position') as THREE.BufferAttribute;
+      for (let i=0;i<particleCount;i++) {
+        let y = arr.getY(i) + delta * 1.5 * (0.3 + Math.random()*0.7);
+        if (y > -4) y = -30 - Math.random()*10; // reset
+        arr.setY(i, y);
+      }
+      arr.needsUpdate = true;
       controls.update();
       renderer.render(scene, camera);
       animationRef.current = requestAnimationFrame(animate);

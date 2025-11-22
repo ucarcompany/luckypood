@@ -201,26 +201,33 @@ npm.cmd run -w admin dev -- --port=5174
 - 管理员拥有暂停与提现权限；请妥善保管私钥。
 
 ---
-## 10. UI 更新（3D 水面与浮动聊天）
-前端已替换为 Three.js 立体水面背景：
-- 具有透视相机（俯视角度）与动态波纹。调用 `triggerRipple(count)` 可临时增强水面扰动。
-- 沙地采用程序化生成纹理（避免直接提交图片）。你可以在 `WaterBackground.tsx` 中替换 `generateSandTexture()` 为直接加载你提供的海底沙子图片：
-	```ts
-	const texLoader = new THREE.TextureLoader();
-	const sandTexture = texLoader.load('/assets/sand.jpg');
-	sandTexture.wrapS = sandTexture.wrapT = THREE.RepeatWrapping;
-	sandTexture.repeat.set(8,8);
-	```
-	把图片放到 `frontend/public/assets/sand.jpg` 或使用 Vite 资源导入方式。
-- 浮动聊天按钮已确保可点击（背景 canvas 设为 `pointer-events: none`）。如需真正实时聊天，可在 `FloatingChat.tsx` 中集成 socket.io（项目已装客户端）。
+## 10. UI / 实时聊天增强
+### 3D 水面
+已使用 Three.js + 自生成法线贴图改造 `WaterBackground.tsx`：
+- 透视相机（俯视）+ 动态波纹，`triggerRipple(count)` 增强扰动。
+- 程序化沙地纹理：可在 `generateSandTexture()` 内替换成你提供的海底沙子图片（放 `frontend/public/assets/` 目录）。
+- 自生成 Perlin 法线贴图 `generateWaterNormals()` 提升高光与波形细节。
+- 体积雾/光效：点云模拟水下颗粒，配合雾化营造深度层次。如需关闭，删除 point cloud 相关代码以及 `scene.fog`。
 
-快速自定义：
-- 调整水颜色：修改 `waterColor`（十六进制值）。
-- 增强波纹：增大 `distortionScale` 或在 `triggerRipple` 中增加幅度。
-- 关闭雾：删除 `scene.fog` 或调低密度。
+### 实时聊天（Socket.io）
+后端：在 `backend/src/index.ts` 增加 Socket.io 服务，事件：
+- `chat:join { pool }` 进入池房间，返回 `chat:history` 最近消息。
+- `chat:send { pool,address,token,message }` 验证签名令牌后广播 `chat:message`。
+令牌流程：前端打开聊天时调用 `/api/chat/nonce` → 使用钱包签名标准登录字符串 → `/api/chat/auth` 获取 token。
 
-性能建议：
-- 低端设备可把 `textureWidth/Height: 256`。
-- 将 Three.js 相关渲染逻辑拆到懒加载，减少初始 bundle 大小。
+前端：`FloatingChat.tsx` 已接入：
+- 自动拉取历史与实时追加消息。
+- 连接钱包后自动完成签名认证。
+- 输入框发送消息（280 字截断，3s 频率限制）。
+
+### 自定义与性能
+- 调整色彩：`waterColor`、点光/平行光颜色。
+- 性能优化：减少粒子数量、将纹理尺寸改为 256；用 `import('three')` 做懒加载。
+- 关闭体积效果：移除粒子相关创建与更新逻辑即可。
+
+### 下一步可选扩展
+- 聊天历史分页与消息撤回（需额外元数据/签名）。
+- 支持多池独立房间：前端根据活动卡片传入池地址调用 `chat:join`。
+- 后端添加 Redis/数据库持久化与离线分析。
 
 更详细的使用与参数说明请见各子目录内的 README 与代码注释。

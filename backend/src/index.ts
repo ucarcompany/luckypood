@@ -8,6 +8,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import http from 'http';
+import { Server as IOServer } from 'socket.io';
 import https from 'https';
 import { utils as ethersUtils, providers as ethersProviders } from 'ethers';
 import { createPoolCreatedAggregator } from './logsPoolCreated';
@@ -1090,6 +1091,88 @@ app.get('/api/stats', async (_req, res) => {
 // Start HTTP server (bind on IPv4 to ensure 127.0.0.1 works behind Nginx)
 const httpServer = http.createServer(app);
 const gameServer = new GameServer(httpServer, METADATA_DIR);
+
+// --- Realtime Chat via Socket.io ---
+interface ChatSocketPayload {
+  pool?: string; address?: string; token?: string; message?: string;
+}
+
+function readPoolChatRecent(poolAddr: string, limit = 50) {
+  try {
+    const now = new Date();
+    const months = [0, -1].map(delta => {
+      const d = new Date(now.getFullYear(), now.getMonth()+delta, 1)
+      return path.join(LOG_DIR, `chat-${poolAddr}-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}.jsonl`)
+    })
+    const lines: string[] = []
+    for (const f of months) {
+      if (fs.existsSync(f)) {
+        const content = fs.readFileSync(f, 'utf-8')
+        lines.push(...content.split(/\r?\n/).filter(Boolean))
+      }
+    }
+    const items = lines.slice(-limit).map(l => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
+    return items
+  } catch { return [] }
+}
+
+const io = new IOServer(httpServer, { cors: { origin: true, credentials: true } })
+io.on('connection', (socket) => {
+  socket.on('chat:join', (payload: ChatSocketPayload) => {
+    try {
+      const pool = String(payload?.pool||'').toLowerCase();
+      if (!/^0x[0-9a-f]{40}$/.test(pool)) return;
+      socket.join('pool:'+pool)
+      const recent = readPoolChatRecent(pool, 80)
+      socket.emit('chat:history', recent)
+    } catch {/* ignore */}
+  })
+  socket.on('chat:send', async (payload: ChatSocketPayload) => {
+    try {
+      let { pool, address, token, message } = payload || {}
+      if (!pool || !address || !token || !message) return;
+      const poolAddr = String(pool).toLowerCase();
+      const adr = String(address).toLowerCase();
+      if (!/^0x[0-9a-f]{40}$/.test(poolAddr) || !/^0x[0-9a-f]{40}$/.test(adr)) return;
+      message = sanitizeMessage(String(message))
+      if (!message) return;
+      const session = chatSessions.get(adr)
+      if (!session || session.token !== token || (Date.now()-session.ts) > CHAT_TOKEN_TTL_MS) return;
+      const last = chatLastSent.get(adr) || 0
+      if (Date.now() - last < CHAT_MIN_INTERVAL_MS) return; // rate limit
+      chatLastSent.set(adr, Date.now())
+      const ts = Math.floor(Date.now()/1000)
+      const file = path.join(LOG_DIR, `chat-${poolAddr}-${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}.jsonl`)
+      const lineObj = { ts, pool: poolAddr, address: adr, message }
+      try { fs.appendFileSync(file, JSON.stringify(lineObj)+"\n", 'utf-8') } catch {}
+      io.to('pool:'+poolAddr).emit('chat:message', lineObj)
+    } catch {/* ignore */}
+  })
+  // Support global channel (no pool separation)
+  socket.on('support:join', () => {
+    socket.join('support')
+  })
+  socket.on('support:send', (payload: { address?: string; token?: string; message?: string }) => {
+    try {
+      let { address, token, message } = payload || {}
+      if (!address || !token || !message) return;
+      const adr = String(address).toLowerCase();
+      if (!/^0x[0-9a-f]{40}$/.test(adr)) return;
+      message = sanitizeMessage(String(message))
+      if (!message) return;
+      const session = chatSessions.get(adr)
+      if (!session || session.token !== token || (Date.now()-session.ts) > CHAT_TOKEN_TTL_MS) return;
+      const last = chatLastSent.get(adr) || 0
+      if (Date.now() - last < CHAT_MIN_INTERVAL_MS) return;
+      chatLastSent.set(adr, Date.now())
+      const ts = Math.floor(Date.now()/1000)
+      const file = supportLogFile(Date.now())
+      const lineObj = { ts, channel:'support', from:'user', address: adr, message }
+      try { fs.appendFileSync(file, JSON.stringify(lineObj)+"\n", 'utf-8') } catch {}
+      io.to('support').emit('support:message', lineObj)
+    } catch {/* ignore */}
+  })
+})
 
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Lucky-pool backend listening on ${BASE_URL}`);
