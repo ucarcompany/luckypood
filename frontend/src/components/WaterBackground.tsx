@@ -353,3 +353,4 @@ const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children 
 });
 
 export default WaterBackground;
+// End of component
