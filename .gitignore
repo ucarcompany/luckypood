@@ -8,9 +8,15 @@ yarn-error.log*
 pnpm-debug.log*
 
 # env
+# Generic patterns
 *.env
 .env*
 !*.env.example
+
+# Explicitly ignore contract secrets (was accidentally committed)
+contracts/.env
+backend/.env
+frontend/.env.production
 
 # editor
 .vscode/
