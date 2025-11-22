@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import WaterBackground, { WaterBackgroundRef } from './components/WaterBackground'
 import styled from 'styled-components'
 
-const Header = styled.header
+const Header = styled.header`
   padding: 20px;
   display: flex;
   justify-content: space-between;
@@ -17,17 +17,17 @@ const Header = styled.header
   position: sticky;
   top: 0;
   z-index: 10;
-;
+`;
 
-const Title = styled.h1
+const Title = styled.h1`
   margin: 0;
   font-size: 24px;
   font-weight: 800;
   letter-spacing: -0.5px;
   text-shadow: 0 2px 4px rgba(0,0,0,0.1);
-;
+`;
 
-const WalletButton = styled.button
+const WalletButton = styled.button`
   background: rgba(255, 255, 255, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.3);
   color: white;
@@ -41,7 +41,7 @@ const WalletButton = styled.button
   &:hover {
     background: rgba(255, 255, 255, 0.3);
   }
-;
+`;
 
 export default function App() {
   const { t } = useTranslation()
