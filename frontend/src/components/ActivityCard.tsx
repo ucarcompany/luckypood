@@ -16,14 +16,14 @@ const ERC20_ABI = [
   { inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }], name: 'approve', outputs: [{ type: 'bool' }], stateMutability: 'nonpayable', type: 'function' }
 ]
 
-const InputGroup = styled.div
+const InputGroup = styled.div`
   display: flex;
   align-items: center;
   gap: 10px;
   margin: 10px 0;
-;
+`;
 
-const Input = styled.input
+const Input = styled.input`
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
@@ -36,9 +36,9 @@ const Input = styled.input
   &:focus {
     border-color: rgba(255, 255, 255, 0.5);
   }
-;
+`;
 
-const StatusBadge = styled.span<{ status: 'active' | 'ended' | 'pending' }>
+const StatusBadge = styled.span<{ status: 'active' | 'ended' | 'pending' }>`
   background: ${props => {
     if (props.status === 'active') return 'rgba(52, 199, 89, 0.4)';
     if (props.status === 'ended') return 'rgba(142, 142, 147, 0.4)';
@@ -48,6 +48,8 @@ const StatusBadge = styled.span<{ status: 'active' | 'ended' | 'pending' }>
   border-radius: 6px;
   font-size: 12px;
   font-weight: bold;
+  margin-left: auto;
+`;
   margin-left: auto;
 ;
 
