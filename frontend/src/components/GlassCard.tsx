@@ -1,25 +1,20 @@
 import styled from 'styled-components';
 
 export const GlassCard = styled.div`
-  /* 高级透明磨砂玻璃：更弱的底色 + 体积光感渐变 */
-  background: linear-gradient(
-    145deg,
-    rgba(255,255,255,0.35) 0%,
-    rgba(255,255,255,0.18) 40%,
-    rgba(255,255,255,0.12) 100%
-  );
-  backdrop-filter: blur(28px) saturate(190%) contrast(105%);
-  -webkit-backdrop-filter: blur(28px) saturate(190%) contrast(105%);
+  /* 纯玻璃感：极低不透明度 + 轻雾化 + 边框高光 */
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(30px) saturate(180%) contrast(110%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%) contrast(110%);
   border-radius: 28px;
-  border: 1px solid rgba(255,255,255,0.45);
-  border-top: 1px solid rgba(255,255,255,0.65);
-  border-left: 1px solid rgba(255,255,255,0.55);
+  border: 1px solid rgba(255,255,255,0.35);
+  border-top: 1px solid rgba(255,255,255,0.55);
+  border-left: 1px solid rgba(255,255,255,0.45);
   padding: 26px 28px;
   color: #0e1116;
   box-shadow:
-    0 4px 12px -2px rgba(0,0,0,0.08),
-    0 8px 32px 0 rgba(31,38,135,0.12),
-    inset 0 0 0 0 rgba(255,255,255,0.3);
+    0 4px 18px -4px rgba(0,0,0,0.25),
+    0 2px 6px -1px rgba(0,0,0,0.12),
+    inset 0 0 0 0 rgba(255,255,255,0.25);
   position: relative;
   overflow: hidden;
   transition: box-shadow .35s cubic-bezier(.17,.67,.27,.99), transform .25s;
@@ -29,7 +24,7 @@ export const GlassCard = styled.div`
     content: '';
     position: absolute;
     inset: 0;
-    background: radial-gradient(circle at 25% 15%, rgba(255,255,255,0.55), rgba(255,255,255,0) 60%);
+    background: radial-gradient(circle at 25% 15%, rgba(255,255,255,0.35), rgba(255,255,255,0) 60%);
     pointer-events: none;
     mix-blend-mode: overlay;
   }
@@ -41,8 +36,8 @@ export const GlassCard = styled.div`
     left: -10%;
     width: 140%;
     height: 200%;
-    background: linear-gradient(115deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 45%, rgba(255,255,255,0) 60%);
-    opacity: .55;
+    background: linear-gradient(115deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.35) 45%, rgba(255,255,255,0) 60%);
+    opacity: .45;
     transform: rotate(3deg);
     pointer-events: none;
   }
@@ -50,8 +45,8 @@ export const GlassCard = styled.div`
   &:hover {
     transform: translateY(-4px);
     box-shadow:
-      0 6px 14px -2px rgba(0,0,0,0.12),
-      0 12px 42px 4px rgba(31,38,135,0.18);
+      0 8px 26px -6px rgba(0,0,0,0.3),
+      0 12px 42px 4px rgba(0,0,0,0.15);
   }
 `;
 

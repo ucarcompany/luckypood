@@ -32,21 +32,31 @@ const Input = styled.input`
   }
 `;
 
-const StatusBadge = styled.span<{ status: 'active' | 'ended' | 'pending' }>`
-  background: ${props => {
-    if (props.status === 'active') return 'rgba(88, 86, 214, 0.1)';
-    if (props.status === 'ended') return 'rgba(142, 142, 147, 0.1)';
-    return 'rgba(255, 149, 0, 0.1)';
+const StatusBadge = styled.span<{ status: 'fundraising' | 'countdown' | 'ended' | 'pending' }>`
+  background: ${({ status }) => {
+    switch (status) {
+      case 'fundraising': return 'rgba(0,122,255,0.12)';
+      case 'countdown': return 'rgba(255,149,0,0.18)';
+      case 'ended': return 'rgba(142,142,147,0.15)';
+      case 'pending': return 'rgba(255,204,0,0.18)';
+      default: return 'rgba(255,255,255,0.15)';
+    }
   }};
-  color: ${props => {
-    if (props.status === 'active') return '#5856d6';
-    if (props.status === 'ended') return '#8e8e93';
-    return '#ff9500';
+  color: ${({ status }) => {
+    switch (status) {
+      case 'fundraising': return '#007aff';
+      case 'countdown': return '#ff9500';
+      case 'ended': return '#8e8e93';
+      case 'pending': return '#cc8600';
+      default: return '#fff';
+    }
   }};
-  padding: 4px 8px;
-  border-radius: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
+  letter-spacing: .5px;
+  backdrop-filter: blur(6px);
 `;
 
 export default function ActivityCard({ info, onRefresh, onParticipateSuccess }: { info: PoolInfo, onRefresh?: () => void, onParticipateSuccess?: (count: number) => void }) {
@@ -86,7 +96,19 @@ export default function ActivityCard({ info, onRefresh, onParticipateSuccess }: 
   
   const canRefund = useMemo(() => !info.minReached && !info.drawn && userTickets > 0, [info, userTickets])
   const startAt = info.meta?.startAt ? Number(info.meta.startAt) : info.createdAt
-  const notStarted = startAt > 0 && Math.floor(Date.now()/1000) < startAt
+  const nowSec = Math.floor(Date.now()/1000)
+  const notStarted = startAt > 0 && nowSec < startAt
+  const countdownStarted = info.minReached && info.countdownStartAt > 0 && nowSec >= info.countdownStartAt && !info.drawn
+  const countdownEndAt = countdownStarted ? (info.countdownStartAt + info.countdownSeconds) : undefined
+  const fundraising = !notStarted && !countdownStarted && !info.drawn
+  const countdownActive = countdownStarted && countdownEndAt && nowSec < countdownEndAt
+  const countdownLeftSec = countdownActive ? (countdownEndAt! - nowSec) : 0
+  const formatLeft = (secs: number) => {
+    const h = Math.floor(secs/3600)
+    const m = Math.floor((secs%3600)/60)
+    const s = Math.floor(secs%60)
+    return `${h}h ${m}m ${s}s`
+  }
 
   useEffect(() => {
     (async () => {
@@ -181,8 +203,8 @@ export default function ActivityCard({ info, onRefresh, onParticipateSuccess }: 
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
             <CardTitle>{info.meta?.title || t('noImage')}</CardTitle>
-            <StatusBadge status={info.drawn ? 'ended' : (notStarted ? 'pending' : 'active')}>
-              {info.drawn ? t('drawn') : (notStarted ? t('not_started') : t('countdown'))}
+            <StatusBadge status={info.drawn ? 'ended' : (notStarted ? 'pending' : (countdownActive ? 'countdown' : 'fundraising'))}>
+              {info.drawn ? t('drawn') : notStarted ? t('not_started') : countdownActive ? t('countdown') : t('fundraising')}
             </StatusBadge>
           </div>
           <div style={{ fontSize: 12, color: '#666' }}>
@@ -205,27 +227,36 @@ export default function ActivityCard({ info, onRefresh, onParticipateSuccess }: 
       </div>
 
       {notStarted ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f5f5f5', padding: '12px', borderRadius: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: '50%', border: '3px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', color: '#999' }}>
-            {Math.floor((startAt - Date.now()/1000) / 3600)}%
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.15)', padding: '12px 16px', borderRadius: 14, backdropFilter: 'blur(12px)' }}>
+          <div style={{ width: 46, height: 46, borderRadius: '50%', border: '3px solid rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', color: '#fff', background:'rgba(255,255,255,0.1)' }}>
+            ⏳
           </div>
-          <span style={{ color: '#333', fontWeight: 500 }}>
-            {t('start_in')}: {Math.floor((startAt - Date.now()/1000) / 3600)}h {Math.floor(((startAt - Date.now()/1000) % 3600) / 60)}m {Math.floor((startAt - Date.now()/1000) % 60)}s
+          <span style={{ color: '#fff', fontWeight: 500 }}>
+            {t('start_in')}: {formatLeft(startAt - nowSec)}
           </span>
         </div>
       ) : info.drawn ? (
         <div style={{ textAlign: 'center', padding: 20, color: '#8e8e93' }}>
           {t('draw_msg_drawn')}
         </div>
+      ) : countdownActive ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(255,149,0,0.12)', padding: '12px 16px', borderRadius: 14, backdropFilter: 'blur(12px)', marginBottom: 16 }}>
+          <div style={{ width: 46, height: 46, borderRadius: '50%', border: '3px solid rgba(255,149,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', color: '#ff9500', background:'rgba(255,255,255,0.15)' }}>
+            {Math.max(0, Math.floor((countdownLeftSec / info.countdownSeconds) * 100))}%
+          </div>
+          <span style={{ color: '#ff9500', fontWeight: 600 }}>
+            {t('countdown_left')}: {formatLeft(countdownLeftSec)}
+          </span>
+        </div>
       ) : (
         <>
-          {!info.minReached && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-              <div style={{ width: 40, height: 40, borderRadius: '50%', border: '3px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', color: '#999' }}>
-                0%
+          {fundraising && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, background:'rgba(0,122,255,0.12)', padding:'10px 14px', borderRadius:14, backdropFilter:'blur(10px)' }}>
+              <div style={{ width: 46, height: 46, borderRadius: '50%', border: '3px solid rgba(0,122,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold', color: '#007aff', background:'rgba(255,255,255,0.15)' }}>
+                {(progress*100).toFixed(0)}%
               </div>
-              <span style={{ color: '#333', fontWeight: 500 }}>
-                {t('countdown_left')}: 71h 59m 2s
+              <span style={{ color: '#007aff', fontWeight: 600 }}>
+                {t('fundraising')}
               </span>
             </div>
           )}
