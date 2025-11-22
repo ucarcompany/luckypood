@@ -2,7 +2,7 @@ import paramiko
 import time
 import sys
 
-def deploy():
+def update():
     hostname = '38.22.95.235'
     username = 'root'
     password = 'zTpctEKQ2KqsP2qX'
@@ -16,7 +16,7 @@ def deploy():
         print("Connected successfully.")
         
         commands = [
-            "cd /opt/luckypood && git pull",
+            "cd /opt/luckypood && git fetch origin && git reset --hard origin/main",
             "cd /opt/luckypood && npm install",
             "cd /opt/luckypood && npm run -w backend build",
             "cd /opt/luckypood && npm run -w frontend build",
@@ -25,9 +25,10 @@ def deploy():
             "mkdir -p /var/www/luckypood-admin",
             "cp -r /opt/luckypood/frontend/dist/* /var/www/luckypood-user/",
             "cp -r /opt/luckypood/admin/dist/* /var/www/luckypood-admin/",
-            "pm2 restart lucky-backend"
+            "pm2 restart lucky-backend",
+            "service nginx reload"
         ]
-
+        
         for cmd in commands:
             print(f"\n>>> Executing: {cmd}")
             stdin, stdout, stderr = client.exec_command(cmd)
@@ -48,17 +49,13 @@ def deploy():
             exit_status = stdout.channel.recv_exit_status()
             if exit_status != 0:
                 print(f"Command failed with exit status {exit_status}")
-                # We might want to stop here, or continue. 
-                # For now, let's stop on critical errors like build failure.
                 if "build" in cmd:
                     return
-
-        print("\nDeployment completed successfully!")
-
+                
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"Error: {e}")
     finally:
         client.close()
 
 if __name__ == "__main__":
-    deploy()
+    update()

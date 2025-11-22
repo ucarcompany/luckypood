@@ -120,28 +120,7 @@ function generateWaterNormals(size=256): THREE.Texture {
   return tex;
 }
 
-const WaterBackground = React.forwardRef<WaterBackgroundRef, Props>(({ children }, ref) => {
-  const mountRef = useRef<HTMLDivElement>(null);
-  const waterObjRef = useRef<Water>();
-  const rippleQueueRef = useRef<number>(0);
-  const rendererRef = useRef<THREE.WebGLRenderer>();
-  const animationRef = useRef<number>();
 
-  useEffect(() => {
-    const mountEl = mountRef.current;
-    if (!mountEl) return;
-
-    const scene = new THREE.Scene();
-    // 移除深色雾，改用清澈的淡蓝色雾或无雾，增强通透感
-    // scene.fog = new THREE.FogExp2('#083044', 0.0025); 
-
-    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 20000);
-    camera.position.set(-30, 35, 60); 
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
 // 生成圆形粒子纹理
 function generateCircleTexture(): THREE.Texture {
   const canvas = document.createElement('canvas');
