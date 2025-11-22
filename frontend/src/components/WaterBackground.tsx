@@ -19,6 +19,7 @@ const CanvasWrap = styled.div`
   position: absolute;
   inset: 0;
   pointer-events: none;
+  z-index: 0; /* Ensure it is behind Content but visible */
 `;
 
 const Content = styled.div`
@@ -72,40 +73,34 @@ function generatePoolBottomTexture(size = 512): THREE.Texture {
   return texture;
 }
 
-// 简单 Perlin 噪声，用于水面法线贴图生成
-function perlin(x: number, y: number): number {
-  function fade(t: number) { return t*t*t*(t*(t*6-15)+10) }
-  function lerp(a: number, b: number, t: number) { return a + (b-a)*t }
-  function grad(hash: number, x: number, y: number) {
-    switch(hash & 3) { case 0: return  x + y; case 1: return -x + y; case 2: return x - y; case 3: return -x - y; default: return 0; }
-  }
-  const X = Math.floor(x) & 255; const Y = Math.floor(y) & 255;
-  x -= Math.floor(x); y -= Math.floor(y);
-  const u = fade(x); const v = fade(y);
-  const p: number[] = []; for (let i=0;i<512;i++) p[i] = perm[i & 255];
-  const aa = p[X     + p[Y    ]];
-  const ab = p[X     + p[Y + 1]];
-  const ba = p[X + 1 + p[Y    ]];
-  const bb = p[X + 1 + p[Y + 1]];
-  return lerp(lerp(grad(aa,x,y), grad(ba,x-1,y), u), lerp(grad(ab,x,y-1), grad(bb,x-1,y-1), u), v);
-}
-const perm = Array.from({length:256},()=>Math.floor(Math.random()*256));
-
-function generateWaterNormals(size=256): THREE.Texture {
+function generateWaterNormals(size=512): THREE.Texture {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d')!;
   const imgData = ctx.createImageData(size, size);
-  for (let y=0;y<size;y++) {
-    for (let x=0;x<size;x++) {
-      const nx = perlin(x/32, y/32);
-      const ny = perlin(x/32+100, y/32+100);
+  
+  for (let y=0; y<size; y++) {
+    for (let x=0; x<size; x++) {
+      // Use multiple sine waves to simulate water surface
+      const freq1 = 0.02; const freq2 = 0.05;
+      const amp1 = 1.0; const amp2 = 0.5;
+      
+      const val1 = x * freq1 + y * freq1;
+      const val2 = x * freq2 - y * freq2;
+      
+      const dx = Math.cos(val1) * freq1 * amp1 + Math.cos(val2) * freq2 * amp2;
+      const dy = Math.cos(val1) * freq1 * amp1 - Math.cos(val2) * freq2 * amp2;
+      
       const nz = 1.0;
-      // Normalize rough vector
-      const len = Math.sqrt(nx*nx+ny*ny+nz*nz) || 1;
-      const r = ((nx/len)+1)*127;
-      const g = ((ny/len)+1)*127;
-      const b = ((nz/len)+1)*127;
+      const nx = -dx * 5.0; // Scale normal
+      const ny = -dy * 5.0;
+      
+      const len = Math.sqrt(nx*nx + ny*ny + nz*nz);
+      
+      const r = ((nx/len) + 1) * 127.5;
+      const g = ((ny/len) + 1) * 127.5;
+      const b = ((nz/len) + 1) * 127.5;
+      
       const i = (y*size + x)*4;
       imgData.data[i] = r;
       imgData.data[i+1] = g;

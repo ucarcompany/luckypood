@@ -1,14 +1,14 @@
 import styled from 'styled-components';
 
 export const GlassCard = styled.div`
-  background: rgba(255, 255, 255, 0.85); /* 更不透明的白色，接近图1效果 */
+  background: rgba(255, 255, 255, 0.25); /* 透明玻璃质感 */
   box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   padding: 24px;
-  color: #333; /* 深色文字 */
+  color: #333;
   transition: transform 0.2s;
   margin-bottom: 20px;
   position: relative;

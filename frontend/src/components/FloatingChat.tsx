@@ -231,7 +231,7 @@ export default function FloatingChat() {
       <FloatButton onClick={() => setIsOpen(o=>!o)}>💬</FloatButton>
       <ChatWindow isOpen={isOpen}>
         <ChatHeader>
-          <span>{t('community_chat') || '社区聊天'}</span>
+          <span>{t('customer_service') || '客服'}</span>
           <span style={{cursor:'pointer'}} onClick={() => setIsOpen(false)}>✕</span>
         </ChatHeader>
         <ChatBody ref={bodyRef}>

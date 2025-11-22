@@ -18,15 +18,9 @@ def update():
         commands = [
             "cd /opt/luckypood && git fetch origin && git reset --hard origin/main",
             "cd /opt/luckypood && npm install",
-            "cd /opt/luckypood && npm run -w backend build",
             "cd /opt/luckypood && npm run -w frontend build",
-            "cd /opt/luckypood && npm run -w admin build",
-            "mkdir -p /var/www/luckypood-user",
-            "mkdir -p /var/www/luckypood-admin",
             "cp -r /opt/luckypood/frontend/dist/* /var/www/luckypood-user/",
-            "cp -r /opt/luckypood/admin/dist/* /var/www/luckypood-admin/",
-            "pm2 restart lucky-backend",
-            "service nginx reload"
+            "pm2 restart lucky-backend"
         ]
         
         for cmd in commands:
