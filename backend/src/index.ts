@@ -1149,8 +1149,36 @@ io.on('connection', (socket) => {
     } catch {/* ignore */}
   })
   // Support global channel (no pool separation)
-  socket.on('support:join', () => {
-    socket.join('support')
+  socket.on('support:join', (payload: { address: string }) => {
+    if (payload?.address) {
+      const adr = String(payload.address).toLowerCase();
+      socket.join(`support:${adr}`);
+      // Send history (3 days)
+      const now = Date.now();
+      const since = Math.floor(now/1000) - 3 * 86400;
+      // Read recent logs... (simplified for socket: just last 50 items within 3 days)
+      // Ideally reuse the logic from /api/support/messages but for socket
+      // For now, let's just let the client fetch history via REST if needed, or push empty.
+      // The client `FloatingChat` uses `chat:history` event.
+      // Let's implement history push.
+      const months = [0, -1].map(delta => {
+        const d = new Date(now + delta * 30 * 86400 * 1000); // approx
+        return path.join(LOG_DIR, `support-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}.jsonl`)
+      });
+      const items: any[] = [];
+      for (const f of months) {
+        if (fs.existsSync(f)) {
+          const lines = fs.readFileSync(f, 'utf-8').split(/\r?\n/).filter(Boolean);
+          for (const l of lines) {
+            try {
+              const j = JSON.parse(l);
+              if (j.address === adr && j.ts > since) items.push(j);
+            } catch {}
+          }
+        }
+      }
+      socket.emit('support:history', items.slice(-50));
+    }
   })
   socket.on('support:send', (payload: { address?: string; token?: string; message?: string }) => {
     try {
@@ -1160,16 +1188,22 @@ io.on('connection', (socket) => {
       if (!/^0x[0-9a-f]{40}$/.test(adr)) return;
       message = sanitizeMessage(String(message))
       if (!message) return;
+      
       const session = chatSessions.get(adr)
       if (!session || session.token !== token || (Date.now()-session.ts) > CHAT_TOKEN_TTL_MS) return;
-      const last = chatLastSent.get(adr) || 0
-      if (Date.now() - last < CHAT_MIN_INTERVAL_MS) return;
-      chatLastSent.set(adr, Date.now())
+      
+      if (!checkRateLimit(adr)) {
+        socket.emit('error', { message: 'Rate limit exceeded (10 msgs/min)' });
+        return;
+      }
+      
       const ts = Math.floor(Date.now()/1000)
       const file = supportLogFile(Date.now())
       const lineObj = { ts, channel:'support', from:'user', address: adr, message }
       try { fs.appendFileSync(file, JSON.stringify(lineObj)+"\n", 'utf-8') } catch {}
-      io.to('support').emit('support:message', lineObj)
+      
+      // Emit to user room (so other tabs see it) and admin (if admin listens to this room, but admin uses REST polling)
+      io.to(`support:${adr}`).emit('support:message', lineObj)
     } catch {/* ignore */}
   })
 })

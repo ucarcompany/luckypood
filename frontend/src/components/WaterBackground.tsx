@@ -25,6 +25,10 @@ const Content = styled.div`
   position: relative;
   z-index: 1;
   min-height: 100vh;
+  pointer-events: none; /* 让鼠标事件穿透到 Canvas */
+  & > * {
+    pointer-events: auto; /* 恢复子元素交互 */
+  }
 `;
 
 export interface WaterBackgroundRef {

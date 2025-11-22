@@ -146,7 +146,7 @@ const SendBtn = styled.button`
   &:active { transform: scale(0.96); }
 `;
 
-type ChatMsg = { ts: number; address: string; message: string };
+type ChatMsg = { ts: number; address: string; message: string; from?: string };
 
 export default function FloatingChat() {
   const [isOpen, setIsOpen] = useState(false);
