@@ -59,7 +59,7 @@ export default function App() {
       <Header>
         <Title>Lucky Pool</Title>
         <WalletButton onClick={connect}>
-          {account ? \\...\\ : t('connect_wallet')}
+          {account ? `${account.slice(0,6)}...${account.slice(-4)}` : t('connect_wallet')}
         </WalletButton>
       </Header>
       
